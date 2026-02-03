@@ -1,0 +1,263 @@
+
+'use client';
+
+import { useState } from 'react';
+import { Plus, Search, Calendar as CalendarIcon, FileText } from 'lucide-react';
+
+interface Debt {
+    id: string;
+    amount: string;
+    creditor: string;
+    category: string;
+    createdDate: string;
+    dueDate: string;
+    description: string;
+    status: 'Ödendi' | 'Bekliyor' | 'Gecikmiş';
+}
+
+const MOCK_DEBTS: Debt[] = [
+    { id: '1', amount: '₺5,000.00', creditor: 'Tedarikçi A.Ş.', category: 'Mal Alımı', createdDate: '2024-02-01', dueDate: '2024-02-15', description: 'Ocak ayı toptan mal alımı', status: 'Bekliyor' },
+    { id: '2', amount: '₺1,200.00', creditor: 'Enerjisa', category: 'Fatura', createdDate: '2024-01-28', dueDate: '2024-02-10', description: 'Ocak ayı elektrik faturası', status: 'Bekliyor' },
+    { id: '3', amount: '₺3,500.00', creditor: 'Kiralık Dükkan', category: 'Kira', createdDate: '2024-02-01', dueDate: '2024-02-05', description: 'Şubat ayı dükkan kirası', status: 'Ödendi' },
+];
+
+export default function DebtsPage() {
+    const [debts, setDebts] = useState<Debt[]>(MOCK_DEBTS);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newDebt, setNewDebt] = useState({
+        amount: '',
+        creditor: '',
+        category: '',
+        createdDate: new Date().toISOString().split('T')[0],
+        dueDate: '',
+        description: ''
+    });
+
+    const handleAddDebt = (e: React.FormEvent) => {
+        e.preventDefault();
+        const debt: Debt = {
+            id: Math.random().toString(36).substr(2, 9),
+            amount: `₺${parseFloat(newDebt.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+            creditor: newDebt.creditor,
+            category: newDebt.category,
+            createdDate: newDebt.createdDate,
+            dueDate: newDebt.dueDate,
+            description: newDebt.description,
+            status: 'Bekliyor'
+        };
+        setDebts([debt, ...debts]);
+        setShowAddModal(false);
+        setNewDebt({
+            amount: '',
+            creditor: '',
+            category: '',
+            createdDate: new Date().toISOString().split('T')[0],
+            dueDate: '',
+            description: ''
+        });
+    };
+
+    const getStatusColor = (status: Debt['status']) => {
+        switch (status) {
+            case 'Ödendi': return 'bg-green-500/10 text-green-500';
+            case 'Bekliyor': return 'bg-yellow-500/10 text-yellow-500';
+            case 'Gecikmiş': return 'bg-red-500/10 text-red-500';
+            default: return 'bg-gray-500/10 text-gray-500';
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 className="text-3xl font-bold tracking-tight">Borçlar</h2>
+                    <p className="text-muted-foreground mt-1">
+                        Ödemeniz gereken borçları ve vadelerini buradan takip edebilirsiniz.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
+                >
+                    <Plus className="w-5 h-5" />
+                    Borç Ekle
+                </button>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid gap-4 md:grid-cols-3">
+                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                    <h3 className="text-sm font-medium text-muted-foreground">Toplam Borç</h3>
+                    <div className="mt-2 text-3xl font-bold text-foreground">₺9,700.00</div>
+                </div>
+                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                    <h3 className="text-sm font-medium text-muted-foreground">Geciken Ödemeler</h3>
+                    <div className="mt-2 text-3xl font-bold text-red-500">₺0.00</div>
+                </div>
+                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                    <h3 className="text-sm font-medium text-muted-foreground">Bu Ay Ödenecekler</h3>
+                    <div className="mt-2 text-3xl font-bold text-yellow-500">₺6,200.00</div>
+                </div>
+            </div>
+
+            {/* Table Section */}
+            <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+                <div className="p-6 border-b flex items-center justify-between gap-4">
+                    <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <input
+                            type="text"
+                            placeholder="Borçlarda ara..."
+                            className="pl-9 pr-4 py-2 w-full bg-secondary/50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        />
+                    </div>
+                    <div className="flex gap-2">
+                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
+                            <CalendarIcon className="w-5 h-5" />
+                        </button>
+                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
+                            <FileText className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-secondary/50 text-muted-foreground font-medium">
+                            <tr>
+                                <th className="px-6 py-4">Alacaklı</th>
+                                <th className="px-6 py-4">Kategori</th>
+                                <th className="px-6 py-4">Açıklama</th>
+                                <th className="px-6 py-4">Oluşturulma Tarihi</th>
+                                <th className="px-6 py-4">Son Ödeme Tarihi</th>
+                                <th className="px-6 py-4">Tutar</th>
+                                <th className="px-6 py-4">Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                            {debts.map((debt) => (
+                                <tr key={debt.id} className="hover:bg-secondary/30 transition-colors">
+                                    <td className="px-6 py-4 font-medium text-foreground">{debt.creditor}</td>
+                                    <td className="px-6 py-4 text-muted-foreground">{debt.category}</td>
+                                    <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">{debt.description}</td>
+                                    <td className="px-6 py-4 text-muted-foreground">{debt.createdDate}</td>
+                                    <td className="px-6 py-4 font-medium text-foreground">{debt.dueDate}</td>
+                                    <td className="px-6 py-4 font-bold text-red-500">{debt.amount}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(debt.status)}`}>
+                                            {debt.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Add Debt Modal */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold">Yeni Borç Ekle</h3>
+                        </div>
+
+                        <form onSubmit={handleAddDebt} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Tutar (TL)</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="0.00"
+                                        value={newDebt.amount}
+                                        onChange={(e) => setNewDebt({ ...newDebt, amount: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Alacaklı</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="Örn: Tedarikçi A.Ş."
+                                        value={newDebt.creditor}
+                                        onChange={(e) => setNewDebt({ ...newDebt, creditor: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Borç Tarihi</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
+                                        value={newDebt.createdDate}
+                                        onChange={(e) => setNewDebt({ ...newDebt, createdDate: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Son Ödeme Tarihi</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
+                                        value={newDebt.dueDate}
+                                        onChange={(e) => setNewDebt({ ...newDebt, dueDate: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground">Kategori</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                    value={newDebt.category}
+                                    onChange={(e) => setNewDebt({ ...newDebt, category: e.target.value })}
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    <option value="Tedarik">Tedarik</option>
+                                    <option value="Vergi">Vergi</option>
+                                    <option value="Fatura">Fatura</option>
+                                    <option value="Kira">Kira</option>
+                                    <option value="Diğer">Diğer</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
+                                <textarea
+                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none h-24 resize-none"
+                                    placeholder="Borç hakkında detaylı açıklama..."
+                                    value={newDebt.description}
+                                    onChange={(e) => setNewDebt({ ...newDebt, description: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddModal(false)}
+                                    className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
+                                >
+                                    İptal
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                                >
+                                    Kaydet
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

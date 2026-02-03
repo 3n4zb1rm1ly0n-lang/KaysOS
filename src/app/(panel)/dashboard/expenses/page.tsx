@@ -14,11 +14,7 @@ interface Expense {
     paymentMethod: 'Nakit' | 'Kredi Kartı' | 'Havale';
 }
 
-const MOCK_EXPENSES: Expense[] = [
-    { id: '1', amount: '₺1,250.00', recipient: 'Metro Toptancı Market', category: 'Malzeme Alımı', date: '2024-02-03', description: 'Haftalık mutfak alışverişi', paymentMethod: 'Kredi Kartı' },
-    { id: '2', amount: '₺450.00', recipient: 'Petrol Ofisi', category: 'Ulaşım', date: '2024-02-02', description: 'Servis aracı yakıtı', paymentMethod: 'Kredi Kartı' },
-    { id: '3', amount: '₺200.00', recipient: 'Kırtasiye', category: 'Ofis', date: '2024-02-01', description: 'Kağıt ve kalem', paymentMethod: 'Nakit' },
-];
+const MOCK_EXPENSES: Expense[] = [];
 
 export default function ExpensesPage() {
     const [expenses, setExpenses] = useState<Expense[]>(MOCK_EXPENSES);
@@ -31,6 +27,20 @@ export default function ExpensesPage() {
         description: '',
         paymentMethod: 'Nakit' as 'Nakit' | 'Kredi Kartı' | 'Havale'
     });
+
+    const parseAmount = (str: string) => {
+        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
+    };
+
+    const totalExpense = expenses.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+    const transportExpense = expenses
+        .filter(e => e.category === 'Ulaşım')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+    const officeExpense = expenses
+        .filter(e => e.category === 'Ofis')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const handleAddExpense = (e: React.FormEvent) => {
         e.preventDefault();
@@ -83,7 +93,7 @@ export default function ExpensesPage() {
                         </div>
                         <div>
                             <h3 className="text-sm font-medium text-muted-foreground">Toplam Gider (Ay)</h3>
-                            <div className="mt-1 text-2xl font-bold text-red-500">₺15,450.00</div>
+                            <div className="mt-1 text-2xl font-bold text-red-500">{fmt(totalExpense)}</div>
                         </div>
                     </div>
                 </div>
@@ -94,7 +104,7 @@ export default function ExpensesPage() {
                         </div>
                         <div>
                             <h3 className="text-sm font-medium text-muted-foreground">Ulaşım Giderleri</h3>
-                            <div className="mt-1 text-2xl font-bold text-foreground">₺2,250.00</div>
+                            <div className="mt-1 text-2xl font-bold text-foreground">{fmt(transportExpense)}</div>
                         </div>
                     </div>
                 </div>
@@ -105,7 +115,7 @@ export default function ExpensesPage() {
                         </div>
                         <div>
                             <h3 className="text-sm font-medium text-muted-foreground">Ofis Giderleri</h3>
-                            <div className="mt-1 text-2xl font-bold text-foreground">₺850.00</div>
+                            <div className="mt-1 text-2xl font-bold text-foreground">{fmt(officeExpense)}</div>
                         </div>
                     </div>
                 </div>

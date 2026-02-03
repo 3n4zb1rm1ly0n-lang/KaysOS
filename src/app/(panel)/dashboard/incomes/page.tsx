@@ -15,11 +15,7 @@ interface Income {
     isRecurring?: boolean;
 }
 
-const MOCK_INCOMES: Income[] = [
-    { id: '1', amount: '₺12,450.00', source: 'Kredi Kartı Satışları', category: 'Satış', date: '2024-02-03', description: 'Günlük toplam POS geliri', status: 'Gelir', isRecurring: true },
-    { id: '2', amount: '₺4,200.00', source: 'Nakit Satışlar', category: 'Satış', date: '2024-02-03', description: 'Kasa nakit girişi', status: 'Gelir', isRecurring: true },
-    { id: '3', amount: '₺8,500.00', source: 'Yemeksepeti', category: 'Online', date: '2024-02-02', description: 'Haftalık hakediş ödemesi', status: 'Gelir' },
-];
+const MOCK_INCOMES: Income[] = [];
 
 export default function IncomesPage() {
     const [incomes, setIncomes] = useState<Income[]>(MOCK_INCOMES);
@@ -32,6 +28,25 @@ export default function IncomesPage() {
         description: '',
         isRecurring: false
     });
+
+    const parseAmount = (str: string) => {
+        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
+    };
+
+    const totalIncome = incomes
+        .filter(i => i.status === 'Gelir')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    const pendingIncome = incomes
+        .filter(i => i.status === 'Bekleyen')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    // Basit ortalama hesaplama: Toplam gelir / kayıt sayısı (şimdilik) veya 0
+    // Gerçekte gün sayısına bölünmeli
+    const avgDailyIncome = incomes.length > 0 ? totalIncome / incomes.length : 0;
+
+    // Format helper
+    const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const handleAddIncome = (e: React.FormEvent) => {
         e.preventDefault();
@@ -73,15 +88,15 @@ export default function IncomesPage() {
             <div className="grid gap-4 md:grid-cols-3">
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
                     <h3 className="text-sm font-medium text-muted-foreground">Toplam Gelir (Ay)</h3>
-                    <div className="mt-2 text-3xl font-bold text-green-500">₺25,150.00</div>
+                    <div className="mt-2 text-3xl font-bold text-green-500">{fmt(totalIncome)}</div>
                 </div>
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
                     <h3 className="text-sm font-medium text-muted-foreground">Bekleyen Ödemeler</h3>
-                    <div className="mt-2 text-3xl font-bold text-yellow-500">₺4,250.00</div>
+                    <div className="mt-2 text-3xl font-bold text-yellow-500">{fmt(pendingIncome)}</div>
                 </div>
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
-                    <h3 className="text-sm font-medium text-muted-foreground">Ortalama Günlük Gelir</h3>
-                    <div className="mt-2 text-3xl font-bold text-blue-500">₺3,850.00</div>
+                    <h3 className="text-sm font-medium text-muted-foreground">Ortalama İşlem Başı</h3>
+                    <div className="mt-2 text-3xl font-bold text-blue-500">{fmt(avgDailyIncome)}</div>
                 </div>
             </div>
 

@@ -27,13 +27,7 @@ interface RecurringExpense {
     lastPaidDate?: string;
 }
 
-const MOCK_EXPENSES: RecurringExpense[] = [
-    { id: '1', name: 'Dükkan Kirası', provider: 'Mülk Sahibi', amount: 12000, dayOfMonth: 1, category: 'Kira', status: 'Ödendi', autoPay: true, lastPaidDate: '2024-02-01' },
-    { id: '2', name: 'Elektrik Faturası', provider: 'Enerjisa', amount: 1500, dayOfMonth: 15, category: 'Enerji', status: 'Yaklaşıyor', autoPay: false },
-    { id: '3', name: 'İnternet', provider: 'Türk Telekom', amount: 450, dayOfMonth: 20, category: 'İletişim', status: 'Bekliyor', autoPay: true },
-    { id: '4', name: 'Su Faturası', provider: 'İSKİ', amount: 300, dayOfMonth: 12, category: 'Su', status: 'Bekliyor', autoPay: false },
-    { id: '5', name: 'KDV Ödemesi', provider: 'Vergi Dairesi', amount: 5000, dayOfMonth: 26, category: 'Vergi', status: 'Bekliyor', autoPay: false },
-];
+const MOCK_EXPENSES: RecurringExpense[] = [];
 
 const CategoryIcon = ({ category }: { category: string }) => {
     switch (category) {
@@ -114,7 +108,7 @@ export default function InvoicesPage() {
                     <div className="mt-4 w-full bg-secondary rounded-full h-2">
                         <div
                             className="bg-green-500 h-2 rounded-full transition-all"
-                            style={{ width: `${(totalPaid / totalEstimated) * 100}%` }}
+                            style={{ width: `${totalEstimated > 0 ? (totalPaid / totalEstimated) * 100 : 0}%` }}
                         />
                     </div>
                 </div>

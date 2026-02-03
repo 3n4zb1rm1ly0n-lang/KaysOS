@@ -1,7 +1,0 @@
-{
-  "/(panel)/dashboard/calendar/page": "app/(panel)/dashboard/calendar/page.js",
-  "/(panel)/dashboard/page": "app/(panel)/dashboard/page.js",
-  "/(panel)/dashboard/invoices/page": "app/(panel)/dashboard/invoices/page.js",
-  "/(panel)/dashboard/savings/page": "app/(panel)/dashboard/savings/page.js",
-  "/(panel)/dashboard/incomes/page": "app/(panel)/dashboard/incomes/page.js"
-}

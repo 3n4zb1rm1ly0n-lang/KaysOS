@@ -1,8 +1,9 @@
 
 'use client';
 
-import { useState } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Income {
     id: string;
@@ -15,10 +16,9 @@ interface Income {
     isRecurring?: boolean;
 }
 
-const MOCK_INCOMES: Income[] = [];
-
 export default function IncomesPage() {
-    const [incomes, setIncomes] = useState<Income[]>(MOCK_INCOMES);
+    const [incomes, setIncomes] = useState<Income[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newIncome, setNewIncome] = useState({
         amount: '',
@@ -28,6 +28,40 @@ export default function IncomesPage() {
         description: '',
         isRecurring: false
     });
+
+    // Verileri çek
+    useEffect(() => {
+        fetchIncomes();
+    }, []);
+
+    const fetchIncomes = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('incomes')
+                .select('*')
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                const formattedData: Income[] = data.map(item => ({
+                    id: item.id,
+                    amount: `₺${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    source: item.source,
+                    category: item.category,
+                    date: item.date,
+                    description: item.description,
+                    status: item.status as 'Gelir' | 'Bekleyen',
+                    isRecurring: item.is_recurring
+                }));
+                setIncomes(formattedData);
+            }
+        } catch (error) {
+            console.error('Error fetching incomes:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const parseAmount = (str: string) => {
         return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
@@ -41,28 +75,53 @@ export default function IncomesPage() {
         .filter(i => i.status === 'Bekleyen')
         .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
 
-    // Basit ortalama hesaplama: Toplam gelir / kayıt sayısı (şimdilik) veya 0
-    // Gerçekte gün sayısına bölünmeli
     const avgDailyIncome = incomes.length > 0 ? totalIncome / incomes.length : 0;
 
     // Format helper
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    const handleAddIncome = (e: React.FormEvent) => {
+    const handleAddIncome = async (e: React.FormEvent) => {
         e.preventDefault();
-        const income: Income = {
-            id: Math.random().toString(36).substr(2, 9),
-            amount: `₺${parseFloat(newIncome.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-            source: newIncome.source,
-            category: newIncome.category,
-            date: newIncome.date,
-            description: newIncome.description,
-            status: 'Gelir',
-            isRecurring: newIncome.isRecurring
-        };
-        setIncomes([income, ...incomes]);
-        setShowAddModal(false);
-        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
+
+        try {
+            const numericAmount = parseFloat(newIncome.amount);
+
+            const { data, error } = await supabase
+                .from('incomes')
+                .insert([
+                    {
+                        amount: numericAmount,
+                        source: newIncome.source,
+                        category: newIncome.category,
+                        date: newIncome.date,
+                        description: newIncome.description,
+                        status: 'Gelir',
+                        is_recurring: newIncome.isRecurring
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            if (data) {
+                const addedIncome: Income = {
+                    id: data[0].id,
+                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    source: data[0].source,
+                    category: data[0].category,
+                    date: data[0].date,
+                    description: data[0].description,
+                    status: data[0].status,
+                    isRecurring: data[0].is_recurring
+                };
+                setIncomes([addedIncome, ...incomes]);
+                setShowAddModal(false);
+                setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
+            }
+        } catch (error) {
+            console.error('Error adding income:', error);
+            alert('Gelir eklenirken bir hata oluştu.');
+        }
     };
 
     return (

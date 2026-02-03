@@ -46,10 +46,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(panel)/dashboard/incomes/page.js"
     ],
-    "/_not-found/page": [
+    "/(panel)/dashboard/savings/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/_not-found/page.js"
+      "static/chunks/app/(panel)/dashboard/savings/page.js"
     ]
   }
 }

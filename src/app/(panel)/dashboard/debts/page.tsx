@@ -1,8 +1,9 @@
 
 'use client';
 
-import { useState } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Debt {
     id: string;
@@ -15,10 +16,9 @@ interface Debt {
     status: 'Ödendi' | 'Bekliyor' | 'Gecikmiş';
 }
 
-const MOCK_DEBTS: Debt[] = [];
-
 export default function DebtsPage() {
-    const [debts, setDebts] = useState<Debt[]>(MOCK_DEBTS);
+    const [debts, setDebts] = useState<Debt[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newDebt, setNewDebt] = useState({
         amount: '',
@@ -28,6 +28,39 @@ export default function DebtsPage() {
         dueDate: '',
         description: ''
     });
+
+    useEffect(() => {
+        fetchDebts();
+    }, []);
+
+    const fetchDebts = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('debts')
+                .select('*')
+                .order('due_date', { ascending: true });
+
+            if (error) throw error;
+
+            if (data) {
+                const formattedData: Debt[] = data.map(item => ({
+                    id: item.id,
+                    amount: `₺${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    creditor: item.creditor,
+                    category: item.category,
+                    createdDate: item.created_date,
+                    dueDate: item.due_date,
+                    description: item.description,
+                    status: item.status as 'Ödendi' | 'Bekliyor' | 'Gecikmiş'
+                }));
+                setDebts(formattedData);
+            }
+        } catch (error) {
+            console.error('Error fetching debts:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const parseAmount = (str: string) => {
         return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
@@ -49,28 +82,54 @@ export default function DebtsPage() {
 
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    const handleAddDebt = (e: React.FormEvent) => {
+    const handleAddDebt = async (e: React.FormEvent) => {
         e.preventDefault();
-        const debt: Debt = {
-            id: Math.random().toString(36).substr(2, 9),
-            amount: `₺${parseFloat(newDebt.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-            creditor: newDebt.creditor,
-            category: newDebt.category,
-            createdDate: newDebt.createdDate,
-            dueDate: newDebt.dueDate,
-            description: newDebt.description,
-            status: 'Bekliyor'
-        };
-        setDebts([debt, ...debts]);
-        setShowAddModal(false);
-        setNewDebt({
-            amount: '',
-            creditor: '',
-            category: '',
-            createdDate: new Date().toISOString().split('T')[0],
-            dueDate: '',
-            description: ''
-        });
+        try {
+            const numericAmount = parseFloat(newDebt.amount);
+
+            const { data, error } = await supabase
+                .from('debts')
+                .insert([
+                    {
+                        amount: numericAmount,
+                        creditor: newDebt.creditor,
+                        category: newDebt.category,
+                        created_date: newDebt.createdDate,
+                        due_date: newDebt.dueDate,
+                        description: newDebt.description,
+                        status: 'Bekliyor'
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            if (data) {
+                const addedDebt: Debt = {
+                    id: data[0].id,
+                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    creditor: data[0].creditor,
+                    category: data[0].category,
+                    createdDate: data[0].created_date,
+                    dueDate: data[0].due_date,
+                    description: data[0].description,
+                    status: data[0].status
+                };
+                setDebts([addedDebt, ...debts]);
+                setShowAddModal(false);
+                setNewDebt({
+                    amount: '',
+                    creditor: '',
+                    category: '',
+                    createdDate: new Date().toISOString().split('T')[0],
+                    dueDate: '',
+                    description: ''
+                });
+            }
+        } catch (error) {
+            console.error('Error adding debt:', error);
+            alert('Borç eklenirken bir hata oluştu.');
+        }
     };
 
     const getStatusColor = (status: Debt['status']) => {

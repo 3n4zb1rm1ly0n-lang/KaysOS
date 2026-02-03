@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     Plus,
     Zap,
@@ -12,22 +12,22 @@ import {
     CheckCircle2,
     AlertCircle,
     Clock,
-    MoreVertical
+    MoreVertical,
+    Loader2
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface RecurringExpense {
     id: string;
     name: string;
     provider: string;
-    amount: number; // Tahmini veya sabit tutar
-    dayOfMonth: number; // Ayın kaçıncı günü
+    amount: number;
+    dayOfMonth: number;
     category: 'Enerji' | 'Su' | 'İletişim' | 'Kira' | 'Vergi' | 'Diğer';
     status: 'Ödendi' | 'Yaklaşıyor' | 'Gecikti' | 'Bekliyor';
     autoPay: boolean;
     lastPaidDate?: string;
 }
-
-const MOCK_EXPENSES: RecurringExpense[] = [];
 
 const CategoryIcon = ({ category }: { category: string }) => {
     switch (category) {
@@ -40,8 +40,52 @@ const CategoryIcon = ({ category }: { category: string }) => {
 };
 
 export default function InvoicesPage() {
-    const [expenses, setExpenses] = useState<RecurringExpense[]>(MOCK_EXPENSES);
+    const [expenses, setExpenses] = useState<RecurringExpense[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [newExpense, setNewExpense] = useState({
+        name: '',
+        provider: '',
+        amount: '',
+        dayOfMonth: '',
+        category: 'Diğer',
+        autoPay: false
+    });
+
+    useEffect(() => {
+        fetchExpenses();
+    }, []);
+
+    const fetchExpenses = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('recurring_expenses')
+                .select('*')
+                .order('day_of_month', { ascending: true });
+
+            if (error) throw error;
+
+            if (data) {
+                const formattedData: RecurringExpense[] = data.map(item => ({
+                    id: item.id,
+                    name: item.name,
+                    provider: item.provider,
+                    amount: Number(item.amount),
+                    dayOfMonth: item.day_of_month,
+                    category: item.category as any,
+                    status: item.status as any,
+                    autoPay: item.auto_pay,
+                    lastPaidDate: item.last_paid_date
+                }));
+                // Status Calculation Logic could go here (e.g. comparing date with dayOfMonth)
+                setExpenses(formattedData);
+            }
+        } catch (error) {
+            console.error('Error fetching recurring expenses:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Bu ayın toplam tahmini gideri
     const totalEstimated = expenses.reduce((acc, curr) => acc + curr.amount, 0);
@@ -55,6 +99,63 @@ export default function InvoicesPage() {
             case 'Yaklaşıyor': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
             default: return 'bg-secondary text-muted-foreground border-transparent';
         }
+    };
+
+    const handleAddExpense = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const numericAmount = parseFloat(newExpense.amount);
+            const numericDay = parseInt(newExpense.dayOfMonth);
+
+            const { data, error } = await supabase
+                .from('recurring_expenses')
+                .insert([
+                    {
+                        name: newExpense.name,
+                        provider: newExpense.provider,
+                        amount: numericAmount,
+                        day_of_month: numericDay,
+                        category: newExpense.category,
+                        auto_pay: newExpense.autoPay,
+                        status: 'Bekliyor'
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            if (data) {
+                const added: RecurringExpense = {
+                    id: data[0].id,
+                    name: data[0].name,
+                    provider: data[0].provider,
+                    amount: Number(data[0].amount),
+                    dayOfMonth: data[0].day_of_month,
+                    category: data[0].category as any,
+                    status: data[0].status as any,
+                    autoPay: data[0].auto_pay,
+                    lastPaidDate: data[0].last_paid_date
+                };
+                setExpenses([...expenses, added]);
+                setShowAddModal(false);
+                setNewExpense({
+                    name: '',
+                    provider: '',
+                    amount: '',
+                    dayOfMonth: '',
+                    category: 'Diğer',
+                    autoPay: false
+                });
+            }
+        } catch (error) {
+            console.error('Error adding recurring expense:', error);
+            alert('Hata oluştu.');
+        }
+    };
+
+    // Helper to edit date/amount input state
+    const updateNewExpense = (field: string, value: any) => {
+        setNewExpense(prev => ({ ...prev, [field]: value }));
     };
 
     return (
@@ -195,6 +296,111 @@ export default function InvoicesPage() {
                 </button>
             </div>
 
+
+            {/* Add Modal */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
+                        <h3 className="text-xl font-bold mb-4">Yeni Sabit Gider Ekle</h3>
+                        <form onSubmit={handleAddExpense} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">İsim</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="Örn: Kira"
+                                        value={newExpense.name}
+                                        onChange={(e) => updateNewExpense('name', e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Sağlayıcı / Kişi</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="Örn: Ahmet Yılmaz"
+                                        value={newExpense.provider}
+                                        onChange={(e) => updateNewExpense('provider', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Tutar (Tahmini)</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="0.00"
+                                        value={newExpense.amount}
+                                        onChange={(e) => updateNewExpense('amount', e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Ödeme Günü (1-31)</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="1"
+                                        max="31"
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        value={newExpense.dayOfMonth}
+                                        onChange={(e) => updateNewExpense('dayOfMonth', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground">Kategori</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                    value={newExpense.category}
+                                    onChange={(e) => updateNewExpense('category', e.target.value)}
+                                >
+                                    <option value="Diğer">Diğer</option>
+                                    <option value="Enerji">Enerji (Elektrik/Gaz)</option>
+                                    <option value="Su">Su</option>
+                                    <option value="İletişim">İletişim (İnternet/Tel)</option>
+                                    <option value="Kira">Kira</option>
+                                    <option value="Vergi">Vergi</option>
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-2">
+                                <input
+                                    type="checkbox"
+                                    id="autoPay"
+                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    checked={newExpense.autoPay}
+                                    onChange={(e) => updateNewExpense('autoPay', e.target.checked)}
+                                />
+                                <label htmlFor="autoPay" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">
+                                    Otomatik Ödeme Talimatı Var
+                                </label>
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddModal(false)}
+                                    className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
+                                >
+                                    İptal
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                                >
+                                    Kaydet
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

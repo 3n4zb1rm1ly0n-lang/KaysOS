@@ -1,8 +1,9 @@
 
 'use client';
 
-import { useState } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText, ShoppingBag, Truck, Receipt } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, ShoppingBag, Truck, Receipt, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Expense {
     id: string;
@@ -14,10 +15,9 @@ interface Expense {
     paymentMethod: 'Nakit' | 'Kredi Kartı' | 'Havale';
 }
 
-const MOCK_EXPENSES: Expense[] = [];
-
 export default function ExpensesPage() {
-    const [expenses, setExpenses] = useState<Expense[]>(MOCK_EXPENSES);
+    const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newExpense, setNewExpense] = useState({
         amount: '',
@@ -27,6 +27,38 @@ export default function ExpensesPage() {
         description: '',
         paymentMethod: 'Nakit' as 'Nakit' | 'Kredi Kartı' | 'Havale'
     });
+
+    useEffect(() => {
+        fetchExpenses();
+    }, []);
+
+    const fetchExpenses = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('expenses')
+                .select('*')
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                const formattedData: Expense[] = data.map(item => ({
+                    id: item.id,
+                    amount: `₺${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    recipient: item.recipient,
+                    category: item.category,
+                    date: item.date,
+                    description: item.description,
+                    paymentMethod: item.payment_method
+                }));
+                setExpenses(formattedData);
+            }
+        } catch (error) {
+            console.error('Error fetching expenses:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const parseAmount = (str: string) => {
         return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
@@ -42,27 +74,52 @@ export default function ExpensesPage() {
 
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    const handleAddExpense = (e: React.FormEvent) => {
+    const handleAddExpense = async (e: React.FormEvent) => {
         e.preventDefault();
-        const expense: Expense = {
-            id: Math.random().toString(36).substr(2, 9),
-            amount: `₺${parseFloat(newExpense.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-            recipient: newExpense.recipient,
-            category: newExpense.category,
-            date: newExpense.date,
-            description: newExpense.description,
-            paymentMethod: newExpense.paymentMethod
-        };
-        setExpenses([expense, ...expenses]);
-        setShowAddModal(false);
-        setNewExpense({
-            amount: '',
-            recipient: '',
-            category: '',
-            date: new Date().toISOString().split('T')[0],
-            description: '',
-            paymentMethod: 'Nakit'
-        });
+        try {
+            const numericAmount = parseFloat(newExpense.amount);
+
+            const { data, error } = await supabase
+                .from('expenses')
+                .insert([
+                    {
+                        amount: numericAmount,
+                        recipient: newExpense.recipient,
+                        category: newExpense.category,
+                        date: newExpense.date,
+                        description: newExpense.description,
+                        payment_method: newExpense.paymentMethod
+                    }
+                ])
+                .select();
+
+            if (error) throw error;
+
+            if (data) {
+                const addedExpense: Expense = {
+                    id: data[0].id,
+                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    recipient: data[0].recipient,
+                    category: data[0].category,
+                    date: data[0].date,
+                    description: data[0].description,
+                    paymentMethod: data[0].payment_method
+                };
+                setExpenses([addedExpense, ...expenses]);
+                setShowAddModal(false);
+                setNewExpense({
+                    amount: '',
+                    recipient: '',
+                    category: '',
+                    date: new Date().toISOString().split('T')[0],
+                    description: '',
+                    paymentMethod: 'Nakit'
+                });
+            }
+        } catch (error) {
+            console.error('Error adding expense:', error);
+            alert('Gider eklenirken bir hata oluştu.');
+        }
     };
 
     return (

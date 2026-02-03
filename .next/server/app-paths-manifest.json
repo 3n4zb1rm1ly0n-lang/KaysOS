@@ -1,4 +1,5 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/(panel)/dashboard/calendar/page": "app/(panel)/dashboard/calendar/page.js",
   "/(panel)/dashboard/page": "app/(panel)/dashboard/page.js",
   "/(panel)/dashboard/invoices/page": "app/(panel)/dashboard/invoices/page.js",

@@ -20,13 +20,8 @@ import { tr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 // Mock Data - In a real app, this would come from your global state or API
-const EVENTS = [
-    { id: '1', date: '2024-02-03', title: 'Günlük Kasa', amount: '₺12,450', type: 'incomes' },
-    { id: '2', date: '2024-02-01', title: 'Kira Ödemesi', amount: '₺12,000', type: 'invoices' },
-    { id: '3', date: '2024-02-15', title: 'Elektrik Faturası', amount: '₺1,500', type: 'invoices' },
-    { id: '4', date: '2024-02-15', title: 'Tedarikçi A.Ş.', amount: '₺5,000', type: 'debts' },
-    { id: '5', date: '2024-02-03', title: 'Metro Market', amount: '₺1,250', type: 'expenses' },
-];
+// Mock Data - In a real app, this would come from your global state or API
+const EVENTS: any[] = [];
 
 const EventBadge = ({ type, title, amount }: { type: string, title: string, amount: string }) => {
     const getStyle = () => {

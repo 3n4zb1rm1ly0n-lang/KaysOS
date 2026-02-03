@@ -15,11 +15,7 @@ interface Debt {
     status: 'Ödendi' | 'Bekliyor' | 'Gecikmiş';
 }
 
-const MOCK_DEBTS: Debt[] = [
-    { id: '1', amount: '₺5,000.00', creditor: 'Tedarikçi A.Ş.', category: 'Mal Alımı', createdDate: '2024-02-01', dueDate: '2024-02-15', description: 'Ocak ayı toptan mal alımı', status: 'Bekliyor' },
-    { id: '2', amount: '₺1,200.00', creditor: 'Enerjisa', category: 'Fatura', createdDate: '2024-01-28', dueDate: '2024-02-10', description: 'Ocak ayı elektrik faturası', status: 'Bekliyor' },
-    { id: '3', amount: '₺3,500.00', creditor: 'Kiralık Dükkan', category: 'Kira', createdDate: '2024-02-01', dueDate: '2024-02-05', description: 'Şubat ayı dükkan kirası', status: 'Ödendi' },
-];
+const MOCK_DEBTS: Debt[] = [];
 
 export default function DebtsPage() {
     const [debts, setDebts] = useState<Debt[]>(MOCK_DEBTS);
@@ -32,6 +28,26 @@ export default function DebtsPage() {
         dueDate: '',
         description: ''
     });
+
+    const parseAmount = (str: string) => {
+        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
+    };
+
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+
+    const totalDebt = debts
+        .filter(d => d.status !== 'Ödendi')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    const overdueDebt = debts
+        .filter(d => d.status === 'Gecikmiş')
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    const dueThisMonth = debts
+        .filter(d => d.status !== 'Ödendi' && d.dueDate.startsWith(currentMonth))
+        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+
+    const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const handleAddDebt = (e: React.FormEvent) => {
         e.preventDefault();
@@ -89,15 +105,15 @@ export default function DebtsPage() {
             <div className="grid gap-4 md:grid-cols-3">
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
                     <h3 className="text-sm font-medium text-muted-foreground">Toplam Borç</h3>
-                    <div className="mt-2 text-3xl font-bold text-foreground">₺9,700.00</div>
+                    <div className="mt-2 text-3xl font-bold text-foreground">{fmt(totalDebt)}</div>
                 </div>
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
                     <h3 className="text-sm font-medium text-muted-foreground">Geciken Ödemeler</h3>
-                    <div className="mt-2 text-3xl font-bold text-red-500">₺0.00</div>
+                    <div className="mt-2 text-3xl font-bold text-red-500">{fmt(overdueDebt)}</div>
                 </div>
                 <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
                     <h3 className="text-sm font-medium text-muted-foreground">Bu Ay Ödenecekler</h3>
-                    <div className="mt-2 text-3xl font-bold text-yellow-500">₺6,200.00</div>
+                    <div className="mt-2 text-3xl font-bold text-yellow-500">{fmt(dueThisMonth)}</div>
                 </div>
             </div>
 

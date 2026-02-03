@@ -1,17 +1,17 @@
 
 export const kpiCards = [
-    { title: 'Toplam Gelir', value: '₺128,430', change: '+12.5%', trend: 'up' },
-    { title: 'Aktif Siparişler', value: '432', change: '-2.1%', trend: 'down' },
-    { title: 'Yeni Müşteriler', value: '1,248', change: '+8.4%', trend: 'up' },
-    { title: 'Ortalama Sepet', value: '₺342', change: '+5.2%', trend: 'up' },
+    { title: 'Toplam Gelir', value: '₺0', change: '0%', trend: 'neutral' },
+    { title: 'Aktif Siparişler', value: '0', change: '0%', trend: 'neutral' },
+    { title: 'Yeni Müşteriler', value: '0', change: '0%', trend: 'neutral' },
+    { title: 'Ortalama Sepet', value: '₺0', change: '0%', trend: 'neutral' },
 ];
 
 export const revenueData = [
-    { name: 'Oca', Gelir: 4000, Gider: 2400 },
-    { name: 'Şub', Gelir: 3000, Gider: 1398 },
-    { name: 'Mar', Gelir: 2000, Gider: 9800 },
-    { name: 'Nis', Gelir: 2780, Gider: 3908 },
-    { name: 'May', Gelir: 1890, Gider: 4800 },
-    { name: 'Haz', Gelir: 2390, Gider: 3800 },
-    { name: 'Tem', Gelir: 3490, Gider: 4300 },
+    { name: 'Oca', Gelir: 0, Gider: 0 },
+    { name: 'Şub', Gelir: 0, Gider: 0 },
+    { name: 'Mar', Gelir: 0, Gider: 0 },
+    { name: 'Nis', Gelir: 0, Gider: 0 },
+    { name: 'May', Gelir: 0, Gider: 0 },
+    { name: 'Haz', Gelir: 0, Gider: 0 },
+    { name: 'Tem', Gelir: 0, Gider: 0 },
 ];

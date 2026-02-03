@@ -12,13 +12,13 @@ import {
 } from 'recharts';
 
 const data = [
-    { name: 'Pzt', revenue: 4000, expense: 2400 },
-    { name: 'Sal', revenue: 3000, expense: 1398 },
-    { name: 'Çar', revenue: 2000, expense: 9800 },
-    { name: 'Per', revenue: 2780, expense: 3908 },
-    { name: 'Cum', revenue: 1890, expense: 4800 },
-    { name: 'Cmt', revenue: 2390, expense: 3800 },
-    { name: 'Paz', revenue: 3490, expense: 4300 },
+    { name: 'Pzt', revenue: 0, expense: 0 },
+    { name: 'Sal', revenue: 0, expense: 0 },
+    { name: 'Çar', revenue: 0, expense: 0 },
+    { name: 'Per', revenue: 0, expense: 0 },
+    { name: 'Cum', revenue: 0, expense: 0 },
+    { name: 'Cmt', revenue: 0, expense: 0 },
+    { name: 'Paz', revenue: 0, expense: 0 },
 ];
 
 export function RevenueExpenseLine() {

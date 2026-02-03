@@ -23,11 +23,7 @@ interface TaxRecord {
     netAmount: number;
 }
 
-const MOCK_RECORDS: TaxRecord[] = [
-    { id: '1', date: '2024-02-01', type: 'Gelir', description: 'Ocak Ayı Toplam Satış', totalAmount: 125000, taxRate: 20, taxAmount: 20833.33, netAmount: 104166.67 },
-    { id: '2', date: '2024-02-02', type: 'Gider', description: 'Mal Alımı Faturası', totalAmount: 45000, taxRate: 10, taxAmount: 4090.91, netAmount: 40909.09 },
-    { id: '3', date: '2024-02-03', type: 'Gider', description: 'Dükkan Kirası (Stopaj)', totalAmount: 12000, taxRate: 20, taxAmount: 2000, netAmount: 10000 },
-];
+const MOCK_RECORDS: TaxRecord[] = [];
 
 export default function AccountingPage() {
     const [records, setRecords] = useState<TaxRecord[]>(MOCK_RECORDS);
@@ -227,8 +223,8 @@ export default function AccountingPage() {
                                         <td className="px-4 py-3 text-muted-foreground">{record.date}</td>
                                         <td className="px-4 py-3">
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.type === 'Gelir'
-                                                    ? 'bg-green-500/10 text-green-500'
-                                                    : 'bg-red-500/10 text-red-500'
+                                                ? 'bg-green-500/10 text-green-500'
+                                                : 'bg-red-500/10 text-red-500'
                                                 }`}>
                                                 {record.type}
                                             </span>

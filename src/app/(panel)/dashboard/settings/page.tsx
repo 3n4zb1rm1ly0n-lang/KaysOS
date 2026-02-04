@@ -1,14 +1,73 @@
 'use client';
 
 import { useState } from 'react';
-import { FileSpreadsheet, FileText, Download, Loader2, Database } from 'lucide-react';
+import { FileSpreadsheet, FileText, Download, Loader2, Database, Tag, Plus, Trash2, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+
+interface Category {
+    id: string;
+    name: string;
+    type: 'income' | 'expense' | 'debt' | 'invoice' | 'saving';
+}
+
 export default function SettingsPage() {
     const [loading, setLoading] = useState(false);
+
+    // Category Management State
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [activeTab, setActiveTab] = useState<'income' | 'expense' | 'debt' | 'invoice' | 'saving'>('income');
+    const [newCategoryName, setNewCategoryName] = useState('');
+    const [loadingCategories, setLoadingCategories] = useState(false);
+
+    // Initial Fetch (You might want to put this in a useEffect)
+    // For now, we'll fetch on mount if needed, or when the section is opened.
+
+    const fetchCategories = async () => {
+        setLoadingCategories(true);
+        const { data, error } = await supabase.from('categories').select('*');
+        if (data) setCategories(data as any);
+        setLoadingCategories(false);
+    };
+
+    const handleAddCategory = async () => {
+        if (!newCategoryName.trim()) return;
+
+        try {
+            const { data, error } = await supabase.from('categories').insert([{
+                name: newCategoryName,
+                type: activeTab
+            }]).select();
+
+            if (error) throw error;
+            if (data) {
+                setCategories([...categories, data[0] as any]);
+                setNewCategoryName('');
+            }
+        } catch (error) {
+            console.error('Error adding category:', error);
+            alert('Kategori eklenirken hata oluştu.');
+        }
+    };
+
+    const handleDeleteCategory = async (id: string) => {
+        if (!confirm('Bu kategoriyi silmek istediğinize emin misiniz?')) return;
+        try {
+            const { error } = await supabase.from('categories').delete().eq('id', id);
+            if (error) throw error;
+            setCategories(categories.filter(c => c.id !== id));
+        } catch (error) {
+            console.error('Error deleting category:', error);
+        }
+    };
+
+    // Load categories on mount
+    useState(() => {
+        fetchCategories();
+    });
 
     const fetchAllData = async () => {
         const [incomesRes, expensesRes, debtsRes] = await Promise.all([
@@ -101,8 +160,97 @@ export default function SettingsPage() {
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Ayarlar & Veri Yönetimi</h2>
                 <p className="text-muted-foreground mt-1">
-                    Sistem tercihlerinizi yapılandırın ve finansal raporlarınızı dışa aktarın.
+                    Sistem tercihlerinizi yapılandırın, kategorileri düzenleyin ve finansal raporlarınızı dışa aktarın.
                 </p>
+            </div>
+
+            {/* Category Management Section */}
+            <div className="border rounded-xl bg-card overflow-hidden">
+                <div className="p-6 border-b bg-secondary/10 flex items-center gap-2">
+                    <Settings2 className="w-5 h-5 text-primary" />
+                    <h3 className="font-semibold">Kategori ve İçerik Yönetimi</h3>
+                </div>
+
+                <div className="p-6">
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Gelir, gider ve diğer işlemler eklerken çıkan açılır menülerdeki seçenekleri buradan özelleştirebilirsiniz.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mb-6 border-b pb-4">
+                        <button
+                            onClick={() => setActiveTab('income')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'income' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
+                        >
+                            Gelirler
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('expense')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expense' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
+                        >
+                            Giderler
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('debt')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'debt' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
+                        >
+                            Borçlar
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('invoice')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'invoice' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
+                        >
+                            Faturalar
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('saving')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'saving' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
+                        >
+                            Birikimler
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="Yeni kategori adı..."
+                                className="flex-1 px-4 py-2 bg-secondary/50 rounded-lg border-none outline-none focus:ring-2 focus:ring-primary/20"
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                            />
+                            <button
+                                onClick={handleAddCategory}
+                                disabled={!newCategoryName.trim()}
+                                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 font-medium hover:bg-primary/90 disabled:opacity-50"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Ekle
+                            </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 min-h-[100px] p-4 bg-secondary/20 rounded-xl border border-dashed border-border">
+                            {categories.filter(c => c.type === activeTab).length === 0 ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground py-4">
+                                    <Tag className="w-8 h-8 mb-2 opacity-20" />
+                                    <p>Henüz kategori eklenmemiş.</p>
+                                </div>
+                            ) : (
+                                categories.filter(c => c.type === activeTab).map(category => (
+                                    <div key={category.id} className="group flex items-center gap-2 px-3 py-1.5 bg-card border rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
+                                        <span className="text-sm font-medium">{category.name}</span>
+                                        <button
+                                            onClick={() => handleDeleteCategory(category.id)}
+                                            className="text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Data Export Section */}

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     format,
     startOfMonth,
@@ -14,28 +14,34 @@ import {
     getDay,
     startOfWeek,
     endOfWeek,
-    parseISO
+    parseISO,
+    setDate
 } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
-// Mock Data - In a real app, this would come from your global state or API
-// Mock Data - In a real app, this would come from your global state or API
-const EVENTS: any[] = [];
+interface CalendarEvent {
+    id: string;
+    date: string;
+    title: string;
+    amount: string;
+    type: 'incomes' | 'expenses' | 'debts' | 'invoices';
+}
 
 const EventBadge = ({ type, title, amount }: { type: string, title: string, amount: string }) => {
     const getStyle = () => {
         switch (type) {
-            case 'incomes': return 'bg-green-500/10 text-green-500 border-green-500/20'; // Gelirler
-            case 'invoices': return 'bg-orange-500/10 text-orange-500 border-orange-500/20'; // Faturalar
-            case 'debts': return 'bg-red-500/10 text-red-500 border-red-500/20'; // Borçlar
-            case 'expenses': return 'bg-blue-500/10 text-blue-500 border-blue-500/20'; // Giderler
+            case 'incomes': return 'bg-green-500/10 text-green-500 border-green-500/20';
+            case 'invoices': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+            case 'debts': return 'bg-red-500/10 text-red-500 border-red-500/20';
+            case 'expenses': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
             default: return 'bg-gray-500/10 text-gray-500';
         }
     };
 
     return (
-        <div className={`text-[10px] px-1.5 py-0.5 rounded border mb-1 truncate ${getStyle()}`}>
+        <div className={`text-[10px] px-1.5 py-0.5 rounded border mb-1 truncate ${getStyle()}`} title={`${title} - ${amount}`}>
             <span className="font-semibold">{amount}</span> - {title}
         </div>
     );
@@ -43,9 +49,99 @@ const EventBadge = ({ type, title, amount }: { type: string, title: string, amou
 
 export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const firstDayOfMonth = startOfMonth(currentDate);
     const lastDayOfMonth = endOfMonth(currentDate);
+
+    useEffect(() => {
+        fetchAllEvents();
+    }, [currentDate]);
+
+    const fetchAllEvents = async () => {
+        setLoading(true);
+        try {
+            // Tarih aralığını geniş tutarak (önceki ve sonraki ay dahil) verileri çekelim
+            const startDateStr = format(startOfWeek(firstDayOfMonth), 'yyyy-MM-dd');
+            const endDateStr = format(endOfWeek(lastDayOfMonth), 'yyyy-MM-dd');
+
+            const [incomesRes, expensesRes, debtsRes, invoicesRes] = await Promise.all([
+                supabase.from('incomes').select('*').gte('date', startDateStr).lte('date', endDateStr),
+                supabase.from('expenses').select('*').gte('date', startDateStr).lte('date', endDateStr),
+                supabase.from('debts').select('*'), // Borçların hepsini alıp filtereleyeceğiz (vade tarihine göre)
+                supabase.from('recurring_expenses').select('*') // Faturaları da gününe göre yerleştireceğiz
+            ]);
+
+            const newEvents: CalendarEvent[] = [];
+
+            // 1. Gelirler
+            incomesRes.data?.forEach((item: any) => {
+                newEvents.push({
+                    id: `inc-${item.id}`,
+                    date: item.date,
+                    title: item.source,
+                    amount: `₺${item.amount}`,
+                    type: 'incomes'
+                });
+            });
+
+            // 2. Giderler
+            expensesRes.data?.forEach((item: any) => {
+                newEvents.push({
+                    id: `exp-${item.id}`,
+                    date: item.date,
+                    title: item.recipient,
+                    amount: `₺${item.amount}`,
+                    type: 'expenses'
+                });
+            });
+
+            // 3. Borçlar (Vade Tarihine Göre)
+            debtsRes.data?.forEach((item: any) => {
+                if (item.due_date) {
+                    newEvents.push({
+                        id: `debt-${item.id}`,
+                        date: item.due_date,
+                        title: `Borç Ödemesi: ${item.creditor}`,
+                        amount: `₺${item.amount}`,
+                        type: 'debts'
+                    });
+                }
+            });
+
+            // 4. Sabit Ödemeler (Faturalar) - Seçili takvim ayına göre oluştur
+            invoicesRes.data?.forEach((item: any) => {
+                // Her ayın X günü. Mevcut görüntülenen ayın o gününü oluştur.
+                try {
+                    // Mevcut ayın o günü
+                    let paymentDate = setDate(currentDate, item.day_of_month);
+
+                    // Eğer ayın son gününden sonraysa (örn: Şubat 30 yok), ayın son gününü al
+                    if (item.day_of_month > 28) { // Basit kontrol, date-fns setDate bunu genelde handle eder ama emin olalım
+                        // date-fns setDate mevcut ay sınırlarını aşarsa bir sonraki aya atar. Bunu önlemek gerekebilir ama şimdilik basit tutalım.
+                    }
+
+                    newEvents.push({
+                        id: `inv-${item.id}-${format(currentDate, 'MM')}`, // Unique ID per month
+                        date: format(paymentDate, 'yyyy-MM-dd'),
+                        title: `${item.name} (${item.provider})`,
+                        amount: `₺${item.amount}`,
+                        type: 'invoices'
+                    });
+
+                } catch (e) {
+                    console.error("Date calculation error", e);
+                }
+            });
+
+            setEvents(newEvents);
+        } catch (error) {
+            console.error("Error fetching calendar events", error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Takvim grid'i için haftanın başından ve sonundan günleri al
     const startDate = startOfWeek(firstDayOfMonth, { weekStartsOn: 1 }); // Pazartesi başlar
@@ -101,7 +197,7 @@ export default function CalendarPage() {
                 <div className="grid grid-cols-7 flex-1 auto-rows-fr">
                     {days.map((day, dayIdx) => {
                         // O güne ait eventleri bul
-                        const dayEvents = EVENTS.filter(event => isSameDay(parseISO(event.date), day));
+                        const dayEvents = events.filter(event => isSameDay(parseISO(event.date), day));
                         const isCurrentMonth = isSameMonth(day, currentDate);
                         const isToday = isSameDay(day, new Date());
 

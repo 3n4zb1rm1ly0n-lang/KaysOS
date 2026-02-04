@@ -132,6 +132,43 @@ export default function DebtsPage() {
         }
     };
 
+    const handleMarkAsPaid = async (debt: Debt) => {
+        if (!confirm('Bu borcu ödendi olarak işaretlemek ve giderlere eklemek istiyor musunuz?')) return;
+
+        try {
+            // 1. Update Debt Status
+            const { error: updateError } = await supabase
+                .from('debts')
+                .update({ status: 'Ödendi' })
+                .eq('id', debt.id);
+
+            if (updateError) throw updateError;
+
+            // 2. Create Expense Record
+            const numericAmount = parseFloat(debt.amount.replace(/[^0-9,-]+/g, "").replace(',', '.'));
+
+            const { error: insertError } = await supabase
+                .from('expenses')
+                .insert([{
+                    amount: numericAmount,
+                    recipient: debt.creditor,
+                    category: debt.category,
+                    date: new Date().toISOString().split('T')[0],
+                    description: `${debt.description} (Borç Ödemesi)`,
+                    payment_method: 'Nakit' // Default to Cash or ask user contextually (kept simple for now)
+                }]);
+
+            if (insertError) throw insertError;
+
+            // 3. Update Local State
+            setDebts(debts.map(d => d.id === debt.id ? { ...d, status: 'Ödendi' } : d));
+
+        } catch (error) {
+            console.error('Error marking debt as paid:', error);
+            alert('İşlem sırasında bir hata oluştu.');
+        }
+    };
+
     const getStatusColor = (status: Debt['status']) => {
         switch (status) {
             case 'Ödendi': return 'bg-green-500/10 text-green-500';
@@ -187,14 +224,6 @@ export default function DebtsPage() {
                             className="pl-9 pr-4 py-2 w-full bg-secondary/50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
                         />
                     </div>
-                    <div className="flex gap-2">
-                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
-                            <CalendarIcon className="w-5 h-5" />
-                        </button>
-                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
-                            <FileText className="w-5 h-5" />
-                        </button>
-                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -204,10 +233,10 @@ export default function DebtsPage() {
                                 <th className="px-6 py-4">Alacaklı</th>
                                 <th className="px-6 py-4">Kategori</th>
                                 <th className="px-6 py-4">Açıklama</th>
-                                <th className="px-6 py-4">Oluşturulma Tarihi</th>
-                                <th className="px-6 py-4">Son Ödeme Tarihi</th>
+                                <th className="px-6 py-4">Son Ödeme</th>
                                 <th className="px-6 py-4">Tutar</th>
                                 <th className="px-6 py-4">Durum</th>
+                                <th className="px-6 py-4 text-right">İşlem</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
@@ -216,13 +245,22 @@ export default function DebtsPage() {
                                     <td className="px-6 py-4 font-medium text-foreground">{debt.creditor}</td>
                                     <td className="px-6 py-4 text-muted-foreground">{debt.category}</td>
                                     <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">{debt.description}</td>
-                                    <td className="px-6 py-4 text-muted-foreground">{debt.createdDate}</td>
                                     <td className="px-6 py-4 font-medium text-foreground">{debt.dueDate}</td>
                                     <td className="px-6 py-4 font-bold text-red-500">{debt.amount}</td>
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(debt.status)}`}>
                                             {debt.status}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        {debt.status !== 'Ödendi' && (
+                                            <button
+                                                onClick={() => handleMarkAsPaid(debt)}
+                                                className="text-xs bg-green-500/10 text-green-600 hover:bg-green-500/20 px-3 py-1.5 rounded-md font-medium transition-colors"
+                                            >
+                                                Ödendi İşaretle
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

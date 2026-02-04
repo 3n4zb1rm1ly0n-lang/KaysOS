@@ -53,3 +53,21 @@ create table recurring_expenses (
 
 -- Örnek Veriler (Opsiyonel)
 -- insert into incomes (amount, source, category, date, description) values (1250.00, 'Nakit', 'Satış', '2024-02-03', 'Gün sonu');
+
+-- Kategoriler Tablosu (Ayarlardan yönetilebilir)
+create table categories (
+  id uuid default uuid_generate_v4() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  name text not null,
+  type text not null, -- 'income', 'expense', 'debt', 'invoice', 'saving'
+  color text, -- Opsiyonel: hex code veya tailwind class
+  icon text -- Opsiyonel: lucide icon name
+);
+
+-- Varsayılan Kategoriler (Eğer tablo boşsa çalıştırılabilir)
+-- insert into categories (name, type) values 
+-- ('Satış', 'income'), ('Hizmet', 'income'), ('Yatırım', 'income'), ('Diğer', 'income'),
+-- ('Kira', 'expense'), ('Fatura', 'expense'), ('Maaş', 'expense'), ('Vergi', 'expense'), ('Tedarik', 'expense'), ('Yiyecek', 'expense'),
+-- ('Banka Kredisi', 'debt'), ('Elden Borç', 'debt'), ('Vergi Borcu', 'debt'),
+-- ('Enerji', 'invoice'), ('Su', 'invoice'), ('İnternet', 'invoice'), ('Kira', 'invoice'),
+-- ('Araba', 'saving'), ('Ev', 'saving'), ('Tatil', 'saving'), ('Acil Durum', 'saving');

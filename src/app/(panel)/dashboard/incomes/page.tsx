@@ -21,6 +21,7 @@ export default function IncomesPage() {
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [categories, setCategories] = useState<any[]>([]);
     const [newIncome, setNewIncome] = useState({
         amount: '',
         source: '',
@@ -31,9 +32,26 @@ export default function IncomesPage() {
     });
 
     // Verileri çek
+    // Verileri çek
     useEffect(() => {
         fetchIncomes();
+        fetchCategories();
     }, []);
+
+    const fetchCategories = async () => {
+        const { data } = await supabase.from('categories').select('*').eq('type', 'income');
+        if (data && data.length > 0) {
+            setCategories(data);
+        } else {
+            // Fallback default categories if DB is empty to avoid broken UI
+            setCategories([
+                { id: '1', name: 'Satış' },
+                { id: '2', name: 'Hizmet' },
+                { id: '3', name: 'Yatırım' },
+                { id: '4', name: 'Diğer' }
+            ]);
+        }
+    };
 
     const fetchIncomes = async () => {
         try {
@@ -358,10 +376,9 @@ export default function IncomesPage() {
                                     onChange={(e) => setNewIncome({ ...newIncome, category: e.target.value })}
                                 >
                                     <option value="">Seçiniz...</option>
-                                    <option value="Satış">Satış</option>
-                                    <option value="Hizmet">Hizmet</option>
-                                    <option value="Online">Online Platform</option>
-                                    <option value="Diğer">Diğer</option>
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                    ))}
                                 </select>
                             </div>
 

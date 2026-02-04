@@ -20,6 +20,7 @@ export default function ExpensesPage() {
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [categories, setCategories] = useState<any[]>([]);
     const [newExpense, setNewExpense] = useState({
         amount: '',
         recipient: '',
@@ -31,7 +32,25 @@ export default function ExpensesPage() {
 
     useEffect(() => {
         fetchExpenses();
+        fetchCategories();
     }, []);
+
+    const fetchCategories = async () => {
+        const { data } = await supabase.from('categories').select('*').eq('type', 'expense');
+        if (data && data.length > 0) {
+            setCategories(data);
+        } else {
+            // Fallback
+            setCategories([
+                { id: '1', name: 'Malzeme Alımı' },
+                { id: '2', name: 'Ulaşım' },
+                { id: '3', name: 'Ofis' },
+                { id: '4', name: 'Personel' },
+                { id: '5', name: 'Yemek' },
+                { id: '6', name: 'Diğer' }
+            ]);
+        }
+    };
 
     const fetchExpenses = async () => {
         try {
@@ -377,12 +396,9 @@ export default function ExpensesPage() {
                                         onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
                                     >
                                         <option value="">Seçiniz...</option>
-                                        <option value="Malzeme Alımı">Malzeme Alımı</option>
-                                        <option value="Ulaşım">Ulaşım</option>
-                                        <option value="Ofis">Ofis</option>
-                                        <option value="Personel">Personel</option>
-                                        <option value="Yemek">Yemek</option>
-                                        <option value="Diğer">Diğer</option>
+                                        {categories.map((cat) => (
+                                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">

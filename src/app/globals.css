@@ -13,8 +13,23 @@ body {
   background: var(--background);
 }
 
+
 @layer base {
-  textarea {
-    color: black;
+
+  input,
+  textarea,
+  select {
+    background-color: #111827 !important;
+    /* Dark Gray (Gray-900) */
+    color: #F9FAFB !important;
+    /* White (Gray-50) */
+    border: 1px solid #374151;
+    /* Border Gray-700 */
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9CA3AF !important;
+    /* Gray-400 */
   }
 }

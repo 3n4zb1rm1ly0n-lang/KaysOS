@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2 } from 'lucide-react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface Income {
@@ -20,6 +20,7 @@ export default function IncomesPage() {
     const [incomes, setIncomes] = useState<Income[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [newIncome, setNewIncome] = useState({
         amount: '',
         source: '',
@@ -80,47 +81,114 @@ export default function IncomesPage() {
     // Format helper
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Bu geliri silmek istediğinize emin misiniz?')) return;
+
+        try {
+            const { error } = await supabase
+                .from('incomes')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setIncomes(incomes.filter(i => i.id !== id));
+        } catch (error) {
+            console.error('Error deleting income:', error);
+            alert('Silme işlemi sırasında bir hata oluştu.');
+        }
+    };
+
+    const handleEdit = (income: Income) => {
+        setEditingId(income.id);
+        setNewIncome({
+            amount: parseAmount(income.amount).toString(),
+            source: income.source,
+            category: income.category,
+            date: income.date,
+            description: income.description,
+            isRecurring: income.isRecurring || false
+        });
+        setShowAddModal(true);
+    };
+
     const handleAddIncome = async (e: React.FormEvent) => {
         e.preventDefault();
 
         try {
             const numericAmount = parseFloat(newIncome.amount);
 
-            const { data, error } = await supabase
-                .from('incomes')
-                .insert([
-                    {
+            if (editingId) {
+                // Update
+                const { data, error } = await supabase
+                    .from('incomes')
+                    .update({
                         amount: numericAmount,
                         source: newIncome.source,
                         category: newIncome.category,
                         date: newIncome.date,
                         description: newIncome.description,
-                        status: 'Gelir',
                         is_recurring: newIncome.isRecurring
-                    }
-                ])
-                .select();
+                    })
+                    .eq('id', editingId)
+                    .select();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data) {
-                const addedIncome: Income = {
-                    id: data[0].id,
-                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                    source: data[0].source,
-                    category: data[0].category,
-                    date: data[0].date,
-                    description: data[0].description,
-                    status: data[0].status,
-                    isRecurring: data[0].is_recurring
-                };
-                setIncomes([addedIncome, ...incomes]);
-                setShowAddModal(false);
-                setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
+                if (data) {
+                    const updatedIncome: Income = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        source: data[0].source,
+                        category: data[0].category,
+                        date: data[0].date,
+                        description: data[0].description,
+                        status: data[0].status,
+                        isRecurring: data[0].is_recurring
+                    };
+                    setIncomes(incomes.map(i => i.id === editingId ? updatedIncome : i));
+                }
+            } else {
+                // Insert
+                const { data, error } = await supabase
+                    .from('incomes')
+                    .insert([
+                        {
+                            amount: numericAmount,
+                            source: newIncome.source,
+                            category: newIncome.category,
+                            date: newIncome.date,
+                            description: newIncome.description,
+                            status: 'Gelir',
+                            is_recurring: newIncome.isRecurring
+                        }
+                    ])
+                    .select();
+
+                if (error) throw error;
+
+                if (data) {
+                    const addedIncome: Income = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        source: data[0].source,
+                        category: data[0].category,
+                        date: data[0].date,
+                        description: data[0].description,
+                        status: data[0].status,
+                        isRecurring: data[0].is_recurring
+                    };
+                    setIncomes([addedIncome, ...incomes]);
+                }
             }
+
+            setShowAddModal(false);
+            setEditingId(null);
+            setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
         } catch (error) {
-            console.error('Error adding income:', error);
-            alert('Gelir eklenirken bir hata oluştu: ' + (error as any).message);
+            console.error('Error saving income:', error);
+            alert('İşlem sırasında bir hata oluştu: ' + (error as any).message);
         }
     };
 
@@ -135,7 +203,11 @@ export default function IncomesPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -190,6 +262,7 @@ export default function IncomesPage() {
                                 <th className="px-6 py-4">Tarih</th>
                                 <th className="px-6 py-4">Tutar</th>
                                 <th className="px-6 py-4">Durum</th>
+                                <th className="px-6 py-4 text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
@@ -212,6 +285,22 @@ export default function IncomesPage() {
                                             {income.status}
                                         </span>
                                     </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => handleEdit(income)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(income.id)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -223,7 +312,7 @@ export default function IncomesPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
-                        <h3 className="text-xl font-bold mb-4">Yeni Gelir Ekle</h3>
+                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Gelir Düzenle' : 'Yeni Gelir Ekle'}</h3>
                         <form onSubmit={handleAddIncome} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -302,7 +391,10 @@ export default function IncomesPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal
@@ -311,7 +403,7 @@ export default function IncomesPage() {
                                     type="submit"
                                     className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
                                 >
-                                    Kaydet
+                                    {editingId ? 'Güncelle' : 'Kaydet'}
                                 </button>
                             </div>
                         </form>

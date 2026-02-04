@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText, ShoppingBag, Truck, Receipt, Loader2 } from 'lucide-react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, ShoppingBag, Truck, Receipt, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface Expense {
@@ -19,6 +19,7 @@ export default function ExpensesPage() {
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [newExpense, setNewExpense] = useState({
         amount: '',
         recipient: '',
@@ -74,51 +75,117 @@ export default function ExpensesPage() {
 
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Bu gideri silmek istediğinize emin misiniz?')) return;
+
+        try {
+            const { error } = await supabase
+                .from('expenses')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setExpenses(expenses.filter(e => e.id !== id));
+        } catch (error) {
+            console.error('Error deleting expense:', error);
+            alert('Silme işlemi sırasında bir hata oluştu.');
+        }
+    };
+
+    const handleEdit = (expense: Expense) => {
+        setEditingId(expense.id);
+        setNewExpense({
+            amount: parseAmount(expense.amount).toString(),
+            recipient: expense.recipient,
+            category: expense.category,
+            date: expense.date,
+            description: expense.description,
+            paymentMethod: expense.paymentMethod
+        });
+        setShowAddModal(true);
+    };
+
     const handleAddExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const numericAmount = parseFloat(newExpense.amount);
 
-            const { data, error } = await supabase
-                .from('expenses')
-                .insert([
-                    {
+            if (editingId) {
+                // Update
+                const { data, error } = await supabase
+                    .from('expenses')
+                    .update({
                         amount: numericAmount,
                         recipient: newExpense.recipient,
                         category: newExpense.category,
                         date: newExpense.date,
                         description: newExpense.description,
                         payment_method: newExpense.paymentMethod
-                    }
-                ])
-                .select();
+                    })
+                    .eq('id', editingId)
+                    .select();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data) {
-                const addedExpense: Expense = {
-                    id: data[0].id,
-                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                    recipient: data[0].recipient,
-                    category: data[0].category,
-                    date: data[0].date,
-                    description: data[0].description,
-                    paymentMethod: data[0].payment_method
-                };
-                setExpenses([addedExpense, ...expenses]);
-                setShowAddModal(false);
-                setNewExpense({
-                    amount: '',
-                    recipient: '',
-                    category: '',
-                    date: new Date().toISOString().split('T')[0],
-                    description: '',
-                    paymentMethod: 'Nakit'
-                });
+                if (data) {
+                    const updatedExpense: Expense = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        recipient: data[0].recipient,
+                        category: data[0].category,
+                        date: data[0].date,
+                        description: data[0].description,
+                        paymentMethod: data[0].payment_method
+                    };
+                    setExpenses(expenses.map(e => e.id === editingId ? updatedExpense : e));
+                }
+            } else {
+                // Insert
+                const { data, error } = await supabase
+                    .from('expenses')
+                    .insert([
+                        {
+                            amount: numericAmount,
+                            recipient: newExpense.recipient,
+                            category: newExpense.category,
+                            date: newExpense.date,
+                            description: newExpense.description,
+                            payment_method: newExpense.paymentMethod
+                        }
+                    ])
+                    .select();
+
+                if (error) throw error;
+
+                if (data) {
+                    const addedExpense: Expense = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        recipient: data[0].recipient,
+                        category: data[0].category,
+                        date: data[0].date,
+                        description: data[0].description,
+                        paymentMethod: data[0].payment_method
+                    };
+                    setExpenses([addedExpense, ...expenses]);
+                }
             }
+
+            setShowAddModal(false);
+            setEditingId(null);
+            setNewExpense({
+                amount: '',
+                recipient: '',
+                category: '',
+                date: new Date().toISOString().split('T')[0],
+                description: '',
+                paymentMethod: 'Nakit'
+            });
         } catch (error) {
-            console.error('Error adding expense:', error);
-            alert('Gider eklenirken bir hata oluştu.');
+            console.error('Error saving expense:', error);
+            alert('İşlem sırasında bir hata oluştu.');
         }
     };
 
@@ -133,7 +200,18 @@ export default function ExpensesPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewExpense({
+                            amount: '',
+                            recipient: '',
+                            category: '',
+                            date: new Date().toISOString().split('T')[0],
+                            description: '',
+                            paymentMethod: 'Nakit'
+                        });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -209,6 +287,7 @@ export default function ExpensesPage() {
                                 <th className="px-6 py-4">Tarih</th>
                                 <th className="px-6 py-4">Ödeme Yöntemi</th>
                                 <th className="px-6 py-4">Tutar</th>
+                                <th className="px-6 py-4 text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
@@ -224,6 +303,22 @@ export default function ExpensesPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 font-medium text-red-500">-{expense.amount}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => handleEdit(expense)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(expense.id)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -235,7 +330,7 @@ export default function ExpensesPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">Yeni Gider Ekle</h3>
+                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Gider Düzenle' : 'Yeni Gider Ekle'}</h3>
                         <form onSubmit={handleAddExpense} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -317,7 +412,10 @@ export default function ExpensesPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal

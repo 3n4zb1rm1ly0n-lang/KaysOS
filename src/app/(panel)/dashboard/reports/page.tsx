@@ -174,7 +174,53 @@ export default function AccountingPage() {
                     <div className={`mt-2 text-3xl font-bold ${netTaxPosition > 0 ? 'text-orange-600' : 'text-green-600'}`}>
                         ₺{Math.abs(netTaxPosition).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">Güncel vergi dengesi</p>
+                    <p className="text-xs text-muted-foreground mt-1">Güncel kümülatif denge</p>
+                </div>
+            </div>
+
+            {/* Annual Summary */}
+            <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-primary" />
+                    {new Date().getFullYear()} Yılı Özeti
+                </h3>
+                <div className="grid gap-4 md:grid-cols-3">
+                    <div className="p-4 rounded-xl bg-card border border-border shadow-sm">
+                        <h3 className="text-xs font-medium text-muted-foreground">Yıllık Hesaplanan KDV</h3>
+                        <div className="mt-1 text-2xl font-bold text-foreground">
+                            ₺{records
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                                .reduce((acc, curr) => acc + curr.taxAmount, 0)
+                                .toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-card border border-border shadow-sm">
+                        <h3 className="text-xs font-medium text-muted-foreground">Yıllık İndirilecek KDV</h3>
+                        <div className="mt-1 text-2xl font-bold text-foreground">
+                            ₺{records
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                .reduce((acc, curr) => acc + curr.taxAmount, 0)
+                                .toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-card border border-border shadow-sm">
+                        <h3 className="text-xs font-medium text-muted-foreground">Yıllık Net KDV Dengesi</h3>
+                        <div className={`mt-1 text-2xl font-bold ${(records
+                            .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                            .reduce((acc, curr) => acc + curr.taxAmount, 0) -
+                            records
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                .reduce((acc, curr) => acc + curr.taxAmount, 0)) > 0 ? 'text-orange-600' : 'text-green-600'
+                            }`}>
+                            ₺{Math.abs(records
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                                .reduce((acc, curr) => acc + curr.taxAmount, 0) -
+                                records
+                                    .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                    .reduce((acc, curr) => acc + curr.taxAmount, 0)
+                            ).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </div>
+                    </div>
                 </div>
             </div>
 

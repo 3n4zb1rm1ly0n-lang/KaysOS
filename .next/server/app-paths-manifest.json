@@ -1,0 +1,15 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/(panel)/dashboard/calendar/page": "app/(panel)/dashboard/calendar/page.js",
+  "/(panel)/dashboard/expenses/page": "app/(panel)/dashboard/expenses/page.js",
+  "/(panel)/dashboard/debts/page": "app/(panel)/dashboard/debts/page.js",
+  "/(panel)/dashboard/incomes/page": "app/(panel)/dashboard/incomes/page.js",
+  "/(panel)/dashboard/invoices/page": "app/(panel)/dashboard/invoices/page.js",
+  "/(panel)/dashboard/page": "app/(panel)/dashboard/page.js",
+  "/(panel)/dashboard/reports/page": "app/(panel)/dashboard/reports/page.js",
+  "/(panel)/dashboard/savings/page": "app/(panel)/dashboard/savings/page.js",
+  "/(panel)/dashboard/settings/page": "app/(panel)/dashboard/settings/page.js"
+}

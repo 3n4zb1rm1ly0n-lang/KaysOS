@@ -97,13 +97,36 @@ export default function DashboardPage() {
     // --- Mock KPIs for now, or Calculate them if wanted ---
     const totalIncome = incomes.reduce((acc, curr) => acc + Number(curr.amount), 0);
     const totalExpense = expenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const netResult = totalIncome - totalExpense;
+
+    const avgTransaction = incomes.length > 0 ? totalIncome / incomes.length : 0;
 
     // Simple dynamic KPI
     const kpiCards = [
-        { title: 'Toplam Gelir', value: `₺${totalIncome.toLocaleString()}`, change: '0%', trend: 'neutral' },
-        { title: 'Toplam Gider', value: `₺${totalExpense.toLocaleString()}`, change: '0%', trend: 'neutral' },
-        { title: 'Net Durum', value: `₺${(totalIncome - totalExpense).toLocaleString()}`, change: '0%', trend: 'neutral' },
-        { title: 'Ortalama İşlem', value: '₺0', change: '0%', trend: 'neutral' },
+        {
+            title: 'Toplam Gelir',
+            value: `₺${totalIncome.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: '-',
+            trend: 'neutral'
+        },
+        {
+            title: 'Toplam Gider',
+            value: `₺${totalExpense.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: '-',
+            trend: 'neutral'
+        },
+        {
+            title: 'Net Durum',
+            value: `₺${netResult.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: '-',
+            trend: netResult >= 0 ? 'up' : 'down'
+        },
+        {
+            title: 'Ortalama İşlem',
+            value: `₺${avgTransaction.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: '-',
+            trend: 'neutral'
+        },
     ];
 
     return (

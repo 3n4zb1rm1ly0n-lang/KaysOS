@@ -140,7 +140,7 @@ export function Sidebar() {
 
             <div className="p-4 border-t mt-auto">
                 <Link
-                    href="/settings"
+                    href="/dashboard/settings"
                     className="flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg hover:bg-secondary/50 transition-colors mb-2"
                 >
                     <Settings className="w-5 h-5 text-muted-foreground" />

@@ -120,7 +120,7 @@ export default function IncomesPage() {
             }
         } catch (error) {
             console.error('Error adding income:', error);
-            alert('Gelir eklenirken bir hata oluştu.');
+            alert('Gelir eklenirken bir hata oluştu: ' + (error as any).message);
         }
     };
 

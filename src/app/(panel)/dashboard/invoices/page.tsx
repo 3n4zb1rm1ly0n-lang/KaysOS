@@ -13,7 +13,9 @@ import {
     AlertCircle,
     Clock,
     MoreVertical,
-    Loader2
+    Loader2,
+    Pencil,
+    Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -43,6 +45,7 @@ export default function InvoicesPage() {
     const [expenses, setExpenses] = useState<RecurringExpense[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [newExpense, setNewExpense] = useState({
         name: '',
         provider: '',
@@ -141,55 +144,117 @@ export default function InvoicesPage() {
         }
     };
 
+    const handleDelete = async (id: string) => {
+        if (!confirm('Bu sabit gideri silmek istediğinize emin misiniz?')) return;
+
+        try {
+            const { error } = await supabase.from('recurring_expenses').delete().eq('id', id);
+            if (error) throw error;
+            setExpenses(expenses.filter(e => e.id !== id));
+        } catch (error) {
+            console.error('Error deleting expense:', error);
+            alert('Silme sırasında hata oluştu.');
+        }
+    };
+
+    const handleEdit = (expense: RecurringExpense) => {
+        setEditingId(expense.id);
+        setNewExpense({
+            name: expense.name,
+            provider: expense.provider,
+            amount: expense.amount.toString(),
+            dayOfMonth: expense.dayOfMonth.toString(),
+            category: expense.category,
+            autoPay: expense.autoPay
+        });
+        setShowAddModal(true);
+    };
+
     const handleAddExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const numericAmount = parseFloat(newExpense.amount);
             const numericDay = parseInt(newExpense.dayOfMonth);
 
-            const { data, error } = await supabase
-                .from('recurring_expenses')
-                .insert([
-                    {
+            if (editingId) {
+                // Update
+                const { data, error } = await supabase
+                    .from('recurring_expenses')
+                    .update({
                         name: newExpense.name,
                         provider: newExpense.provider,
                         amount: numericAmount,
                         day_of_month: numericDay,
                         category: newExpense.category,
-                        auto_pay: newExpense.autoPay,
-                        status: 'Bekliyor'
-                    }
-                ])
-                .select();
+                        auto_pay: newExpense.autoPay
+                    })
+                    .eq('id', editingId)
+                    .select();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data) {
-                const added: RecurringExpense = {
-                    id: data[0].id,
-                    name: data[0].name,
-                    provider: data[0].provider,
-                    amount: Number(data[0].amount),
-                    dayOfMonth: data[0].day_of_month,
-                    category: data[0].category as any,
-                    status: data[0].status as any,
-                    autoPay: data[0].auto_pay,
-                    lastPaidDate: data[0].last_paid_date
-                };
-                setExpenses([...expenses, added]);
-                setShowAddModal(false);
-                setNewExpense({
-                    name: '',
-                    provider: '',
-                    amount: '',
-                    dayOfMonth: '',
-                    category: 'Diğer',
-                    autoPay: false
-                });
+                if (data) {
+                    const updated: RecurringExpense = {
+                        id: data[0].id,
+                        name: data[0].name,
+                        provider: data[0].provider,
+                        amount: Number(data[0].amount),
+                        dayOfMonth: data[0].day_of_month,
+                        category: data[0].category as any,
+                        status: data[0].status as any,
+                        autoPay: data[0].auto_pay,
+                        lastPaidDate: data[0].last_paid_date
+                    };
+                    setExpenses(expenses.map(e => e.id === editingId ? updated : e));
+                }
+            } else {
+                // Insert
+                const { data, error } = await supabase
+                    .from('recurring_expenses')
+                    .insert([
+                        {
+                            name: newExpense.name,
+                            provider: newExpense.provider,
+                            amount: numericAmount,
+                            day_of_month: numericDay,
+                            category: newExpense.category,
+                            auto_pay: newExpense.autoPay,
+                            status: 'Bekliyor'
+                        }
+                    ])
+                    .select();
+
+                if (error) throw error;
+
+                if (data) {
+                    const added: RecurringExpense = {
+                        id: data[0].id,
+                        name: data[0].name,
+                        provider: data[0].provider,
+                        amount: Number(data[0].amount),
+                        dayOfMonth: data[0].day_of_month,
+                        category: data[0].category as any,
+                        status: data[0].status as any,
+                        autoPay: data[0].auto_pay,
+                        lastPaidDate: data[0].last_paid_date
+                    };
+                    setExpenses([...expenses, added]);
+                }
             }
+
+            setShowAddModal(false);
+            setEditingId(null);
+            setNewExpense({
+                name: '',
+                provider: '',
+                amount: '',
+                dayOfMonth: '',
+                category: 'Diğer',
+                autoPay: false
+            });
         } catch (error) {
-            console.error('Error adding recurring expense:', error);
-            alert('Hata oluştu.');
+            console.error('Error saving recurring expense:', error);
+            alert('İşlem sırasında hata oluştu.');
         }
     };
 
@@ -208,7 +273,18 @@ export default function InvoicesPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewExpense({
+                            name: '',
+                            provider: '',
+                            amount: '',
+                            dayOfMonth: '',
+                            category: 'Diğer',
+                            autoPay: false
+                        });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -277,8 +353,19 @@ export default function InvoicesPage() {
                         key={expense.id}
                         className="group relative bg-card border border-border rounded-xl p-6 hover:shadow-md transition-all hover:border-primary/50"
                     >
-                        <div className="absolute top-4 right-4 cursor-pointer text-muted-foreground hover:text-primary">
-                            <MoreVertical className="w-4 h-4" />
+                        <div className="absolute top-4 right-4 flex items-center gap-2">
+                            <button
+                                onClick={() => handleEdit(expense)}
+                                className="text-muted-foreground hover:text-blue-500 transition-colors"
+                            >
+                                <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(expense.id)}
+                                className="text-muted-foreground hover:text-red-500 transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
                         </div>
 
                         <div className="flex items-center gap-4 mb-4">
@@ -344,7 +431,7 @@ export default function InvoicesPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">Yeni Sabit Gider Ekle</h3>
+                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Sabit Gider Düzenle' : 'Yeni Sabit Gider Ekle'}</h3>
                         <form onSubmit={handleAddExpense} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -428,7 +515,10 @@ export default function InvoicesPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal
@@ -437,7 +527,7 @@ export default function InvoicesPage() {
                                     type="submit"
                                     className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
                                 >
-                                    Kaydet
+                                    {editingId ? 'Güncelle' : 'Kaydet'}
                                 </button>
                             </div>
                         </form>

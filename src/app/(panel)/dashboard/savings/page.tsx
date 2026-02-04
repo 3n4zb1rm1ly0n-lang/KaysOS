@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Wallet, Target, TrendingUp, PiggyBank, Loader2, MoreVertical, Trash2 } from 'lucide-react';
+import { Plus, Wallet, Target, TrendingUp, PiggyBank, Loader2, MoreVertical, Trash2, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface SavingGoal {
@@ -18,6 +18,7 @@ export default function SavingsPage() {
     const [goals, setGoals] = useState<SavingGoal[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     // New Goal Form State
     const [newGoal, setNewGoal] = useState({
@@ -59,34 +60,70 @@ export default function SavingsPage() {
     const totalTarget = goals.reduce((acc, curr) => acc + curr.target_amount, 0);
     const totalProgress = totalTarget > 0 ? (totalSaved / totalTarget) * 100 : 0;
 
+    const handleEdit = (goal: SavingGoal) => {
+        setEditingId(goal.id);
+        setNewGoal({
+            name: goal.name,
+            target_amount: goal.target_amount.toString(),
+            current_amount: goal.current_amount.toString(),
+            deadline: goal.deadline || '',
+            category: goal.category
+        });
+        setShowAddModal(true);
+    };
+
     const handleAddGoal = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const numTarget = parseFloat(newGoal.target_amount);
             const numCurrent = parseFloat(newGoal.current_amount) || 0;
 
-            const { data, error } = await supabase
-                .from('savings')
-                .insert([{
-                    name: newGoal.name,
-                    target_amount: numTarget,
-                    current_amount: numCurrent,
-                    deadline: newGoal.deadline || null,
-                    category: newGoal.category,
-                    icon_color: 'blue' // Default for now
-                }])
-                .select();
+            if (editingId) {
+                // Update
+                const { data, error } = await supabase
+                    .from('savings')
+                    .update({
+                        name: newGoal.name,
+                        target_amount: numTarget,
+                        current_amount: numCurrent,
+                        deadline: newGoal.deadline || null,
+                        category: newGoal.category
+                    })
+                    .eq('id', editingId)
+                    .select();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data) {
-                setGoals([data[0] as any, ...goals]);
-                setShowAddModal(false);
-                setNewGoal({ name: '', target_amount: '', current_amount: '', deadline: '', category: 'Diğer' });
+                if (data) {
+                    setGoals(goals.map(g => g.id === editingId ? data[0] as any : g));
+                }
+            } else {
+                // Insert
+                const { data, error } = await supabase
+                    .from('savings')
+                    .insert([{
+                        name: newGoal.name,
+                        target_amount: numTarget,
+                        current_amount: numCurrent,
+                        deadline: newGoal.deadline || null,
+                        category: newGoal.category,
+                        icon_color: 'blue'
+                    }])
+                    .select();
+
+                if (error) throw error;
+
+                if (data) {
+                    setGoals([data[0] as any, ...goals]);
+                }
             }
+
+            setShowAddModal(false);
+            setEditingId(null);
+            setNewGoal({ name: '', target_amount: '', current_amount: '', deadline: '', category: 'Diğer' });
         } catch (error) {
             console.error(error);
-            alert('Hedef eklenirken hata oluştu. Lütfen veritabanı tablosunun oluşturulduğundan emin olun.');
+            alert('İşlem sırasında bir hata oluştu.');
         }
     };
 
@@ -117,7 +154,11 @@ export default function SavingsPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewGoal({ name: '', target_amount: '', current_amount: '', deadline: '', category: 'Diğer' });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -172,12 +213,20 @@ export default function SavingsPage() {
                     const progress = (goal.current_amount / goal.target_amount) * 100;
                     return (
                         <div key={goal.id} className="group relative bg-card border border-border rounded-xl p-6 hover:shadow-lg transition-all hover:-translate-y-1">
-                            <button
-                                onClick={() => handleDelete(goal.id)}
-                                className="absolute top-4 right-4 text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    onClick={() => handleEdit(goal)}
+                                    className="text-muted-foreground hover:text-blue-500"
+                                >
+                                    <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(goal.id)}
+                                    className="text-muted-foreground hover:text-red-500"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
 
                             <div className="flex items-center gap-4 mb-6">
                                 <div className="p-3 bg-secondary rounded-xl">
@@ -243,7 +292,7 @@ export default function SavingsPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">Yeni Birikim Hedefi</h3>
+                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Hedefi Düzenle' : 'Yeni Birikim Hedefi'}</h3>
                         <form onSubmit={handleAddGoal} className="space-y-4">
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-muted-foreground">Hedef Adı</label>
@@ -311,7 +360,10 @@ export default function SavingsPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal
@@ -320,7 +372,7 @@ export default function SavingsPage() {
                                     type="submit"
                                     className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
                                 >
-                                    Hedefi Oluştur
+                                    {editingId ? 'Güncelle' : 'Hedefi Oluştur'}
                                 </button>
                             </div>
                         </form>

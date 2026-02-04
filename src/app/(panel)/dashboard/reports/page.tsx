@@ -9,7 +9,9 @@ import {
     FileText,
     Plus,
     ArrowRightLeft,
-    PieChart
+    PieChart,
+    Pencil,
+    Trash2
 } from 'lucide-react';
 
 interface TaxRecord {
@@ -28,6 +30,7 @@ const MOCK_RECORDS: TaxRecord[] = [];
 export default function AccountingPage() {
     const [records, setRecords] = useState<TaxRecord[]>(MOCK_RECORDS);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     // Quick Calculator State
     const [calcAmount, setCalcAmount] = useState('');
@@ -51,22 +54,56 @@ export default function AccountingPage() {
     const handleAddRecord = (e: React.FormEvent) => {
         e.preventDefault();
         const amount = parseFloat(newRecord.totalAmount);
-        const taxAmount = (amount * newRecord.taxRate) / (100 + newRecord.taxRate); // KDV Dahil varsayımıyla iç yüzde
+        const taxAmount = (amount * newRecord.taxRate) / (100 + newRecord.taxRate);
 
-        const record: TaxRecord = {
-            id: Math.random().toString(36).substr(2, 9),
-            date: newRecord.date,
-            type: newRecord.type,
-            description: newRecord.description,
-            totalAmount: amount,
-            taxRate: newRecord.taxRate,
-            taxAmount: taxAmount,
-            netAmount: amount - taxAmount
-        };
+        if (editingId) {
+            // Update
+            const updated: TaxRecord = {
+                id: editingId,
+                date: newRecord.date,
+                type: newRecord.type,
+                description: newRecord.description,
+                totalAmount: amount,
+                taxRate: newRecord.taxRate,
+                taxAmount: taxAmount,
+                netAmount: amount - taxAmount
+            };
+            setRecords(records.map(r => r.id === editingId ? updated : r));
+        } else {
+            // Create
+            const record: TaxRecord = {
+                id: Math.random().toString(36).substr(2, 9),
+                date: newRecord.date,
+                type: newRecord.type,
+                description: newRecord.description,
+                totalAmount: amount,
+                taxRate: newRecord.taxRate,
+                taxAmount: taxAmount,
+                netAmount: amount - taxAmount
+            };
+            setRecords([record, ...records]);
+        }
 
-        setRecords([record, ...records]);
         setShowAddModal(false);
+        setEditingId(null);
         setNewRecord({ description: '', type: 'Gelir', totalAmount: '', taxRate: 20, date: new Date().toISOString().split('T')[0] });
+    };
+
+    const handleDelete = (id: string) => {
+        if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return;
+        setRecords(records.filter(r => r.id !== id));
+    };
+
+    const handleEdit = (record: TaxRecord) => {
+        setEditingId(record.id);
+        setNewRecord({
+            date: record.date,
+            type: record.type,
+            description: record.description,
+            totalAmount: record.totalAmount.toString(),
+            taxRate: record.taxRate
+        });
+        setShowAddModal(true);
     };
 
     const calculateQuickTax = () => {
@@ -92,7 +129,11 @@ export default function AccountingPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewRecord({ description: '', type: 'Gelir', totalAmount: '', taxRate: 20, date: new Date().toISOString().split('T')[0] });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -215,6 +256,7 @@ export default function AccountingPage() {
                                     <th className="px-4 py-3 text-right">Tutar</th>
                                     <th className="px-4 py-3 text-right">Oran</th>
                                     <th className="px-4 py-3 text-right">KDV</th>
+                                    <th className="px-4 py-3 text-right">İşlemler</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -235,6 +277,22 @@ export default function AccountingPage() {
                                         <td className="px-4 py-3 text-right font-mono font-medium">
                                             ₺{record.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                         </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => handleEdit(record)}
+                                                    className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(record.id)}
+                                                    className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -247,7 +305,7 @@ export default function AccountingPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">Yeni Vergi Kaydı</h3>
+                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Vergi Kaydı Düzenle' : 'Yeni Vergi Kaydı'}</h3>
                         <form onSubmit={handleAddRecord} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -323,7 +381,10 @@ export default function AccountingPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal
@@ -332,7 +393,7 @@ export default function AccountingPage() {
                                     type="submit"
                                     className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
                                 >
-                                    Ekle
+                                    {editingId ? 'Güncelle' : 'Ekle'}
                                 </button>
                             </div>
                         </form>

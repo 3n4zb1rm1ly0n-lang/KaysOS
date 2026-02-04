@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2 } from 'lucide-react';
+import { Plus, Search, Calendar as CalendarIcon, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface Debt {
@@ -20,6 +20,7 @@ export default function DebtsPage() {
     const [debts, setDebts] = useState<Debt[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [newDebt, setNewDebt] = useState({
         amount: '',
         creditor: '',
@@ -82,53 +83,121 @@ export default function DebtsPage() {
 
     const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Bu borcu silmek istediğinize emin misiniz?')) return;
+
+        try {
+            const { error } = await supabase
+                .from('debts')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setDebts(debts.filter(d => d.id !== id));
+        } catch (error) {
+            console.error('Error deleting debt:', error);
+            alert('Silme işlemi sırasında bir hata oluştu.');
+        }
+    };
+
+    const handleEdit = (debt: Debt) => {
+        setEditingId(debt.id);
+        const numericAmount = parseFloat(debt.amount.replace(/[^0-9,-]+/g, "").replace(',', '.'));
+        setNewDebt({
+            amount: numericAmount.toString(),
+            creditor: debt.creditor,
+            category: debt.category,
+            createdDate: debt.createdDate,
+            dueDate: debt.dueDate,
+            description: debt.description
+        });
+        setShowAddModal(true);
+    };
+
     const handleAddDebt = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const numericAmount = parseFloat(newDebt.amount);
 
-            const { data, error } = await supabase
-                .from('debts')
-                .insert([
-                    {
+            if (editingId) {
+                // Update
+                const { data, error } = await supabase
+                    .from('debts')
+                    .update({
                         amount: numericAmount,
                         creditor: newDebt.creditor,
                         category: newDebt.category,
                         created_date: newDebt.createdDate,
                         due_date: newDebt.dueDate,
-                        description: newDebt.description,
-                        status: 'Bekliyor'
-                    }
-                ])
-                .select();
+                        description: newDebt.description
+                    })
+                    .eq('id', editingId)
+                    .select();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data) {
-                const addedDebt: Debt = {
-                    id: data[0].id,
-                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                    creditor: data[0].creditor,
-                    category: data[0].category,
-                    createdDate: data[0].created_date,
-                    dueDate: data[0].due_date,
-                    description: data[0].description,
-                    status: data[0].status
-                };
-                setDebts([addedDebt, ...debts]);
-                setShowAddModal(false);
-                setNewDebt({
-                    amount: '',
-                    creditor: '',
-                    category: '',
-                    createdDate: new Date().toISOString().split('T')[0],
-                    dueDate: '',
-                    description: ''
-                });
+                if (data) {
+                    const updatedDebt: Debt = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        creditor: data[0].creditor,
+                        category: data[0].category,
+                        createdDate: data[0].created_date,
+                        dueDate: data[0].due_date,
+                        description: data[0].description,
+                        status: data[0].status
+                    };
+                    setDebts(debts.map(d => d.id === editingId ? updatedDebt : d));
+                }
+            } else {
+                // Insert
+                const { data, error } = await supabase
+                    .from('debts')
+                    .insert([
+                        {
+                            amount: numericAmount,
+                            creditor: newDebt.creditor,
+                            category: newDebt.category,
+                            created_date: newDebt.createdDate,
+                            due_date: newDebt.dueDate,
+                            description: newDebt.description,
+                            status: 'Bekliyor'
+                        }
+                    ])
+                    .select();
+
+                if (error) throw error;
+
+                if (data) {
+                    const addedDebt: Debt = {
+                        id: data[0].id,
+                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        creditor: data[0].creditor,
+                        category: data[0].category,
+                        createdDate: data[0].created_date,
+                        dueDate: data[0].due_date,
+                        description: data[0].description,
+                        status: data[0].status
+                    };
+                    setDebts([addedDebt, ...debts]);
+                }
             }
+
+            setShowAddModal(false);
+            setEditingId(null);
+            setNewDebt({
+                amount: '',
+                creditor: '',
+                category: '',
+                createdDate: new Date().toISOString().split('T')[0],
+                dueDate: '',
+                description: ''
+            });
         } catch (error) {
             console.error('Error adding debt:', error);
-            alert('Borç eklenirken bir hata oluştu.');
+            alert('İşlem sırasında bir hata oluştu.');
         }
     };
 
@@ -189,7 +258,18 @@ export default function DebtsPage() {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewDebt({
+                            amount: '',
+                            creditor: '',
+                            category: '',
+                            createdDate: new Date().toISOString().split('T')[0],
+                            dueDate: '',
+                            description: ''
+                        });
+                        setShowAddModal(true);
+                    }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
                 >
                     <Plus className="w-5 h-5" />
@@ -253,14 +333,28 @@ export default function DebtsPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        {debt.status !== 'Ödendi' && (
+                                        <div className="flex items-center justify-end gap-2">
+                                            {debt.status !== 'Ödendi' && (
+                                                <button
+                                                    onClick={() => handleMarkAsPaid(debt)}
+                                                    className="text-xs bg-green-500/10 text-green-600 hover:bg-green-500/20 px-3 py-1.5 rounded-md font-medium transition-colors"
+                                                >
+                                                    Ödendi
+                                                </button>
+                                            )}
                                             <button
-                                                onClick={() => handleMarkAsPaid(debt)}
-                                                className="text-xs bg-green-500/10 text-green-600 hover:bg-green-500/20 px-3 py-1.5 rounded-md font-medium transition-colors"
+                                                onClick={() => handleEdit(debt)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
                                             >
-                                                Ödendi İşaretle
+                                                <Pencil className="w-4 h-4" />
                                             </button>
-                                        )}
+                                            <button
+                                                onClick={() => handleDelete(debt.id)}
+                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -274,7 +368,7 @@ export default function DebtsPage() {
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold">Yeni Borç Ekle</h3>
+                            <h3 className="text-xl font-bold">{editingId ? 'Borç Düzenle' : 'Yeni Borç Ekle'}</h3>
                         </div>
 
                         <form onSubmit={handleAddDebt} className="space-y-4">
@@ -355,7 +449,10 @@ export default function DebtsPage() {
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddModal(false)}
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        setEditingId(null);
+                                    }}
                                     className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     İptal
@@ -364,7 +461,7 @@ export default function DebtsPage() {
                                     type="submit"
                                     className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
                                 >
-                                    Kaydet
+                                    {editingId ? 'Güncelle' : 'Kaydet'}
                                 </button>
                             </div>
                         </form>

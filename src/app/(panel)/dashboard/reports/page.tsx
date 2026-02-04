@@ -1,18 +1,20 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     Calculator,
     TrendingUp,
     TrendingDown,
     FileText,
-    Plus,
     ArrowRightLeft,
     PieChart,
-    Pencil,
-    Trash2
+    Loader2,
+    Calendar,
+    AlertCircle
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { getNextTaxDeadlines, calculateEstimatedIncomeTax } from '@/lib/tax-utils';
 
 interface TaxRecord {
     id: string;
@@ -25,86 +27,90 @@ interface TaxRecord {
     netAmount: number;
 }
 
-const MOCK_RECORDS: TaxRecord[] = [];
-
 export default function AccountingPage() {
-    const [records, setRecords] = useState<TaxRecord[]>(MOCK_RECORDS);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [editingId, setEditingId] = useState<string | null>(null);
+    const [records, setRecords] = useState<TaxRecord[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [taxDeadlines, setTaxDeadlines] = useState<any[]>([]);
 
     // Quick Calculator State
     const [calcAmount, setCalcAmount] = useState('');
     const [calcRate, setCalcRate] = useState(20);
     const [calcType, setCalcType] = useState<'dahil' | 'haric'>('dahil');
 
+    useEffect(() => {
+        fetchTaxRecords();
+        setTaxDeadlines(getNextTaxDeadlines());
+    }, []);
+
+    const fetchTaxRecords = async () => {
+        try {
+            setLoading(true);
+
+            // Fetch Incomes with Tax
+            const { data: incomeData } = await supabase
+                .from('incomes')
+                .select('*')
+                .gt('tax_amount', 0)
+                .order('date', { ascending: false });
+
+            // Fetch Expenses with Tax
+            const { data: expenseData } = await supabase
+                .from('expenses')
+                .select('*')
+                .gt('tax_amount', 0)
+                .order('date', { ascending: false });
+
+            let allRecords: TaxRecord[] = [];
+
+            if (incomeData) {
+                const incomes: TaxRecord[] = incomeData.map(item => ({
+                    id: item.id,
+                    date: item.date,
+                    type: 'Gelir',
+                    description: item.description || item.source,
+                    totalAmount: item.amount,
+                    taxRate: item.tax_rate || 20,
+                    taxAmount: item.tax_amount,
+                    netAmount: item.amount - item.tax_amount
+                }));
+                allRecords = [...allRecords, ...incomes];
+            }
+
+            if (expenseData) {
+                const expenses: TaxRecord[] = expenseData.map(item => ({
+                    id: item.id,
+                    date: item.date,
+                    type: 'Gider',
+                    description: item.description || item.recipient,
+                    totalAmount: item.amount,
+                    taxRate: item.tax_rate || 20,
+                    taxAmount: item.tax_amount,
+                    netAmount: item.amount - item.tax_amount
+                }));
+                allRecords = [...allRecords, ...expenses];
+            }
+
+            // Sort by Date Descending
+            allRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            setRecords(allRecords);
+
+        } catch (error) {
+            console.error('Vergi kayıtları çekilemedi:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Summary Calculations
     const totalIncomeTax = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + curr.taxAmount, 0);
     const totalExpenseTax = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + curr.taxAmount, 0);
     const netTaxPosition = totalIncomeTax - totalExpenseTax;
 
-    // New Record Form State
-    const [newRecord, setNewRecord] = useState({
-        description: '',
-        type: 'Gelir' as 'Gelir' | 'Gider',
-        totalAmount: '',
-        taxRate: 20,
-        date: new Date().toISOString().split('T')[0]
-    });
-
-    const handleAddRecord = (e: React.FormEvent) => {
-        e.preventDefault();
-        const amount = parseFloat(newRecord.totalAmount);
-        const taxAmount = (amount * newRecord.taxRate) / (100 + newRecord.taxRate);
-
-        if (editingId) {
-            // Update
-            const updated: TaxRecord = {
-                id: editingId,
-                date: newRecord.date,
-                type: newRecord.type,
-                description: newRecord.description,
-                totalAmount: amount,
-                taxRate: newRecord.taxRate,
-                taxAmount: taxAmount,
-                netAmount: amount - taxAmount
-            };
-            setRecords(records.map(r => r.id === editingId ? updated : r));
-        } else {
-            // Create
-            const record: TaxRecord = {
-                id: Math.random().toString(36).substr(2, 9),
-                date: newRecord.date,
-                type: newRecord.type,
-                description: newRecord.description,
-                totalAmount: amount,
-                taxRate: newRecord.taxRate,
-                taxAmount: taxAmount,
-                netAmount: amount - taxAmount
-            };
-            setRecords([record, ...records]);
-        }
-
-        setShowAddModal(false);
-        setEditingId(null);
-        setNewRecord({ description: '', type: 'Gelir', totalAmount: '', taxRate: 20, date: new Date().toISOString().split('T')[0] });
-    };
-
-    const handleDelete = (id: string) => {
-        if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return;
-        setRecords(records.filter(r => r.id !== id));
-    };
-
-    const handleEdit = (record: TaxRecord) => {
-        setEditingId(record.id);
-        setNewRecord({
-            date: record.date,
-            type: record.type,
-            description: record.description,
-            totalAmount: record.totalAmount.toString(),
-            taxRate: record.taxRate
-        });
-        setShowAddModal(true);
-    };
+    // Profit & Income Tax Estimation (Simple)
+    const totalIncome = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
+    const totalExpense = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
+    const estimatedIncomeTax = calculateEstimatedIncomeTax(totalIncome, totalExpense);
 
     const calculateQuickTax = () => {
         const amount = parseFloat(calcAmount) || 0;
@@ -119,26 +125,23 @@ export default function AccountingPage() {
 
     const quickResult = calculateQuickTax();
 
+    if (loading) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Muhasebe & KDV Takibi</h2>
                     <p className="text-muted-foreground mt-1">
-                        Vergi durumunuzu ve KDV dengenizi buradan yönetin.
+                        Otomatik hesaplanan KDV raporlarınız. (Veriler Gelir ve Giderlerden çekilir)
                     </p>
                 </div>
-                <button
-                    onClick={() => {
-                        setEditingId(null);
-                        setNewRecord({ description: '', type: 'Gelir', totalAmount: '', taxRate: 20, date: new Date().toISOString().split('T')[0] });
-                        setShowAddModal(true);
-                    }}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
-                >
-                    <Plus className="w-5 h-5" />
-                    Vergi Kaydı Ekle
-                </button>
             </div>
 
             {/* Tax Summary Cards */}
@@ -175,9 +178,64 @@ export default function AccountingPage() {
                 </div>
             </div>
 
+            {/* Tax Calendar & Alerts */}
             <div className="grid gap-6 lg:grid-cols-3">
-                {/* Quick Calculator */}
-                <div className="lg:col-span-1 p-6 rounded-xl bg-secondary/30 border border-border h-fit">
+                {/* Upcoming Deadlines */}
+                <div className="lg:col-span-2 space-y-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-primary" />
+                        Vergi Takvimi & Hatırlatmalar
+                    </h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {taxDeadlines.map((deadline, idx) => (
+                            <div key={idx} className={`p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between ${deadline.remainingDays <= 7 ? 'bg-red-500/5 border-red-200' : 'bg-card'}`}>
+                                <div>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${deadline.type === 'KDV' ? 'bg-purple-100 text-purple-600' :
+                                            deadline.type === 'Geçici' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
+                                            }`}>
+                                            {deadline.type}
+                                        </span>
+                                        <span className={`text-xs font-semibold ${deadline.remainingDays <= 7 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                            {deadline.remainingDays} gün kaldı
+                                        </span>
+                                    </div>
+                                    <h4 className="font-medium text-sm">{deadline.title}</h4>
+                                    <p className="text-xs text-muted-foreground mt-1">{deadline.description}</p>
+                                </div>
+                                <div className="mt-3 text-sm font-semibold opacity-80">
+                                    {new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(deadline.date)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Estimated Income Tax Card */}
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 mt-4">
+                        <div className="flex items-start gap-4">
+                            <div className="p-3 bg-white rounded-lg shadow-sm">
+                                <AlertCircle className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                                <h4 className="text-blue-900 font-semibold font-base">Tahmini Gelir/Geçici Vergi Matrahı</h4>
+                                <p className="text-blue-700/80 text-sm mt-1">
+                                    Bu dönemki kârınız üzerinden <strong>artan oranlı (dilimli)</strong> tarife ile hesaplanan tahmini vergidir.
+                                    <br />
+                                    <span className="text-xs opacity-75">*2025 şahıs şirketi gelir vergisi dilimleri baz alınmıştır.</span>
+                                </p>
+                                <div className="mt-3 flex items-baseline gap-2">
+                                    <span className="text-2xl font-bold text-blue-800">₺{estimatedIncomeTax.tax.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                                        Ortalama Yük: %{estimatedIncomeTax.effectiveRate?.toFixed(1) || 0}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Quick Calculator (Right Side) */}
+                <div className="lg:col-span-1 rounded-xl bg-secondary/30 border border-border h-fit p-6">
                     <div className="flex items-center gap-2 mb-4">
                         <Calculator className="w-5 h-5 text-primary" />
                         <h3 className="font-semibold">Hızlı KDV Hesapla</h3>
@@ -243,7 +301,7 @@ export default function AccountingPage() {
                     <div className="p-4 border-b bg-secondary/10 flex justify-between items-center">
                         <h3 className="font-semibold flex items-center gap-2">
                             <FileText className="w-4 h-4" />
-                            Son Vergi Hareketleri
+                            Son Vergi Hareketleri (Otomatik)
                         </h3>
                     </div>
                     <div className="overflow-x-auto">
@@ -256,151 +314,41 @@ export default function AccountingPage() {
                                     <th className="px-4 py-3 text-right">Tutar</th>
                                     <th className="px-4 py-3 text-right">Oran</th>
                                     <th className="px-4 py-3 text-right">KDV</th>
-                                    <th className="px-4 py-3 text-right">İşlemler</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {records.map((record) => (
-                                    <tr key={record.id} className="hover:bg-secondary/30">
-                                        <td className="px-4 py-3 text-muted-foreground">{record.date}</td>
-                                        <td className="px-4 py-3">
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.type === 'Gelir'
-                                                ? 'bg-green-500/10 text-green-500'
-                                                : 'bg-red-500/10 text-red-500'
-                                                }`}>
-                                                {record.type}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 font-medium">{record.description}</td>
-                                        <td className="px-4 py-3 text-right font-mono">₺{record.totalAmount.toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right text-muted-foreground">% {record.taxRate}</td>
-                                        <td className="px-4 py-3 text-right font-mono font-medium">
-                                            ₺{record.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-4 py-3 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => handleEdit(record)}
-                                                    className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
-                                                >
-                                                    <Pencil className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(record.id)}
-                                                    className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                {records.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                                            Henüz KDV içeren bir gelir veya gider kaydı bulunmuyor.
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    records.map((record) => (
+                                        <tr key={record.id} className="hover:bg-secondary/30">
+                                            <td className="px-4 py-3 text-muted-foreground">{record.date}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.type === 'Gelir'
+                                                    ? 'bg-green-500/10 text-green-500'
+                                                    : 'bg-red-500/10 text-red-500'
+                                                    }`}>
+                                                    {record.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium">{record.description}</td>
+                                            <td className="px-4 py-3 text-right font-mono">₺{record.totalAmount.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-muted-foreground">% {record.taxRate}</td>
+                                            <td className="px-4 py-3 text-right font-mono font-medium">
+                                                ₺{record.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-
-            {/* Add Tax Record Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Vergi Kaydı Düzenle' : 'Yeni Vergi Kaydı'}</h3>
-                        <form onSubmit={handleAddRecord} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-medium text-muted-foreground mb-1 block">İşlem Türü</label>
-                                    <div className="flex bg-secondary/50 rounded-lg p-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => setNewRecord({ ...newRecord, type: 'Gelir' })}
-                                            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${newRecord.type === 'Gelir' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
-                                        >
-                                            Gelir
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setNewRecord({ ...newRecord, type: 'Gider' })}
-                                            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${newRecord.type === 'Gider' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
-                                        >
-                                            Gider
-                                        </button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-muted-foreground mb-1 block">Tarih</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                        value={newRecord.date}
-                                        onChange={(e) => setNewRecord({ ...newRecord, date: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Toplam Tutar (KDV Dahil)</label>
-                                <input
-                                    type="number"
-                                    required
-                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder="0.00"
-                                    value={newRecord.totalAmount}
-                                    onChange={(e) => setNewRecord({ ...newRecord, totalAmount: e.target.value })}
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">KDV Oranı (%)</label>
-                                <select
-                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    value={newRecord.taxRate}
-                                    onChange={(e) => setNewRecord({ ...newRecord, taxRate: Number(e.target.value) })}
-                                >
-                                    <option value={1}>%1 (Gıda vb.)</option>
-                                    <option value={8}>%8 (Eski KDV)</option>
-                                    <option value={10}>%10 (Temel İhtiyaç)</option>
-                                    <option value={18}>%18 (Eski Genel)</option>
-                                    <option value={20}>%20 (Genel Hizmet)</option>
-                                </select>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder="Fiş/Fatura detayları..."
-                                    value={newRecord.description}
-                                    onChange={(e) => setNewRecord({ ...newRecord, description: e.target.value })}
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowAddModal(false);
-                                        setEditingId(null);
-                                    }}
-                                    className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
-                                >
-                                    İptal
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
-                                >
-                                    {editingId ? 'Güncelle' : 'Ekle'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
         </div>
     );
 }

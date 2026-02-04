@@ -14,6 +14,8 @@ interface Income {
     description: string;
     status: 'Gelir' | 'Bekleyen';
     isRecurring?: boolean;
+    taxRate?: number;
+    taxAmount?: number;
 }
 
 export default function IncomesPage() {
@@ -28,7 +30,9 @@ export default function IncomesPage() {
         category: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
-        isRecurring: false
+        isRecurring: false,
+        addTax: false,
+        taxRate: 20
     });
 
     // Verileri çek
@@ -71,8 +75,39 @@ export default function IncomesPage() {
                     date: item.date,
                     description: item.description,
                     status: item.status as 'Gelir' | 'Bekleyen',
-                    isRecurring: item.is_recurring
+                    isRecurring: item.is_recurring,
+                    taxRate: item.tax_rate,
+                    taxAmount: item.tax_amount
                 }));
+                // ...
+                if (editingId) {
+                    // Update
+                    const { data, error } = await supabase
+                        .from('incomes')
+                        .update({
+                            // ...
+                            description: newIncome.description,
+                            is_recurring: newIncome.isRecurring,
+                            tax_rate: taxRate,
+                            tax_amount: taxAmount
+                        })
+                    // ...
+                } else {
+                    // Insert
+                    const { data, error } = await supabase
+                        .from('incomes')
+                        .insert([
+                            {
+                                // ...
+                                status: 'Gelir',
+                                is_recurring: newIncome.isRecurring,
+                                tax_rate: taxRate,
+                                tax_amount: taxAmount
+                            }
+                        ])
+                    // ...
+                }
+
                 setIncomes(formattedData);
             }
         } catch (error) {
@@ -81,352 +116,410 @@ export default function IncomesPage() {
             setLoading(false);
         }
     };
-
-    const parseAmount = (str: string) => {
-        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
+    console.error('Error fetching incomes:', error);
+} finally {
+    setLoading(false);
+}
     };
 
-    const totalIncome = incomes
-        .filter(i => i.status === 'Gelir')
-        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+const parseAmount = (str: string) => {
+    return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.')) || 0;
+};
 
-    const pendingIncome = incomes
-        .filter(i => i.status === 'Bekleyen')
-        .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+const totalIncome = incomes
+    .filter(i => i.status === 'Gelir')
+    .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
 
-    const avgDailyIncome = incomes.length > 0 ? totalIncome / incomes.length : 0;
+const pendingIncome = incomes
+    .filter(i => i.status === 'Bekleyen')
+    .reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
 
-    // Format helper
-    const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const avgDailyIncome = incomes.length > 0 ? totalIncome / incomes.length : 0;
+
+// Format helper
+const fmt = (num: number) => `₺${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu geliri silmek istediğinize emin misiniz?')) return;
+const handleDelete = async (id: string) => {
+    if (!confirm('Bu geliri silmek istediğinize emin misiniz?')) return;
 
-        try {
-            const { error } = await supabase
+    try {
+        const { error } = await supabase
+            .from('incomes')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        setIncomes(incomes.filter(i => i.id !== id));
+    } catch (error) {
+        console.error('Error deleting income:', error);
+        alert('Silme işlemi sırasında bir hata oluştu.');
+    }
+};
+
+const handleEdit = (income: Income) => {
+    setEditingId(income.id);
+    setNewIncome({
+        amount: parseAmount(income.amount).toString(),
+        source: income.source,
+        category: income.category,
+        date: income.date,
+        description: income.description,
+        isRecurring: income.isRecurring || false,
+        addTax: (income.taxRate || 0) > 0,
+        taxRate: income.taxRate || 20
+    });
+    setShowAddModal(true);
+};
+
+const handleAddIncome = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+        const numericAmount = parseFloat(newIncome.amount);
+        let taxRate = 0;
+        let taxAmount = 0;
+
+        if (newIncome.addTax) {
+            taxRate = Number(newIncome.taxRate);
+            // Simple calculation: Amount is tax-inclusive usually in small business contexts on UI, 
+            // but let's assume the entered amount is total (Gross).
+            // Tax = Total * (Rate / (100 + Rate)) -> If entered amount is "Dahil"
+            // Let's assume user enters Gross amount.
+            taxAmount = (numericAmount * taxRate) / (100 + taxRate);
+        }
+
+        if (editingId) {
+            // Update
+            const { data, error } = await supabase
                 .from('incomes')
-                .delete()
-                .eq('id', id);
+                .update({
+                    amount: numericAmount,
+                    source: newIncome.source,
+                    category: newIncome.category,
+                    date: newIncome.date,
+                    description: newIncome.description,
+                    is_recurring: newIncome.isRecurring,
+                    tax_rate: taxRate,
+                    tax_amount: taxAmount
+                })
+                .eq('id', editingId)
+                .select();
 
             if (error) throw error;
 
-            setIncomes(incomes.filter(i => i.id !== id));
-        } catch (error) {
-            console.error('Error deleting income:', error);
-            alert('Silme işlemi sırasında bir hata oluştu.');
-        }
-    };
-
-    const handleEdit = (income: Income) => {
-        setEditingId(income.id);
-        setNewIncome({
-            amount: parseAmount(income.amount).toString(),
-            source: income.source,
-            category: income.category,
-            date: income.date,
-            description: income.description,
-            isRecurring: income.isRecurring || false
-        });
-        setShowAddModal(true);
-    };
-
-    const handleAddIncome = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        try {
-            const numericAmount = parseFloat(newIncome.amount);
-
-            if (editingId) {
-                // Update
-                const { data, error } = await supabase
-                    .from('incomes')
-                    .update({
+            if (data) {
+                const updatedIncome: Income = {
+                    id: data[0].id,
+                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    source: data[0].source,
+                    category: data[0].category,
+                    date: data[0].date,
+                    description: data[0].description,
+                    status: data[0].status,
+                    isRecurring: data[0].is_recurring,
+                    taxRate: data[0].tax_rate,
+                    taxAmount: data[0].tax_amount
+                };
+                setIncomes(incomes.map(i => i.id === editingId ? updatedIncome : i));
+            }
+        } else {
+            // Insert
+            const { data, error } = await supabase
+                .from('incomes')
+                .insert([
+                    {
                         amount: numericAmount,
                         source: newIncome.source,
                         category: newIncome.category,
                         date: newIncome.date,
                         description: newIncome.description,
-                        is_recurring: newIncome.isRecurring
-                    })
-                    .eq('id', editingId)
-                    .select();
+                        status: 'Gelir',
+                        is_recurring: newIncome.isRecurring,
+                        tax_rate: taxRate,
+                        tax_amount: taxAmount
+                    }
+                ])
+                .select();
 
-                if (error) throw error;
+            if (error) throw error;
 
-                if (data) {
-                    const updatedIncome: Income = {
-                        id: data[0].id,
-                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                        source: data[0].source,
-                        category: data[0].category,
-                        date: data[0].date,
-                        description: data[0].description,
-                        status: data[0].status,
-                        isRecurring: data[0].is_recurring
-                    };
-                    setIncomes(incomes.map(i => i.id === editingId ? updatedIncome : i));
-                }
-            } else {
-                // Insert
-                const { data, error } = await supabase
-                    .from('incomes')
-                    .insert([
-                        {
-                            amount: numericAmount,
-                            source: newIncome.source,
-                            category: newIncome.category,
-                            date: newIncome.date,
-                            description: newIncome.description,
-                            status: 'Gelir',
-                            is_recurring: newIncome.isRecurring
-                        }
-                    ])
-                    .select();
-
-                if (error) throw error;
-
-                if (data) {
-                    const addedIncome: Income = {
-                        id: data[0].id,
-                        amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                        source: data[0].source,
-                        category: data[0].category,
-                        date: data[0].date,
-                        description: data[0].description,
-                        status: data[0].status,
-                        isRecurring: data[0].is_recurring
-                    };
-                    setIncomes([addedIncome, ...incomes]);
-                }
+            if (data) {
+                const addedIncome: Income = {
+                    id: data[0].id,
+                    amount: `₺${numericAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                    source: data[0].source,
+                    category: data[0].category,
+                    date: data[0].date,
+                    description: data[0].description,
+                    status: data[0].status,
+                    isRecurring: data[0].is_recurring,
+                    taxRate: data[0].tax_rate,
+                    taxAmount: data[0].tax_amount
+                };
+                setIncomes([addedIncome, ...incomes]);
             }
-
-            setShowAddModal(false);
-            setEditingId(null);
-            setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
-        } catch (error) {
-            console.error('Error saving income:', error);
-            alert('İşlem sırasında bir hata oluştu: ' + (error as any).message);
         }
-    };
 
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Gelirler</h2>
-                    <p className="text-muted-foreground mt-1">
-                        Tüm gelir kalemlerinizi buradan takip edebilirsiniz.
-                    </p>
+        setShowAddModal(false);
+        setEditingId(null);
+        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
+    } catch (error) {
+        console.error('Error saving income:', error);
+        alert('İşlem sırasında bir hata oluştu: ' + (error as any).message);
+    }
+};
+
+return (
+    <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h2 className="text-3xl font-bold tracking-tight">Gelirler</h2>
+                <p className="text-muted-foreground mt-1">
+                    Tüm gelir kalemlerinizi buradan takip edebilirsiniz.
+                </p>
+            </div>
+            <button
+                onClick={() => {
+                    setEditingId(null);
+                    setEditingId(null);
+                    setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false, addTax: false, taxRate: 20 });
+                    setShowAddModal(true);
+                }}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
+            >
+                <Plus className="w-5 h-5" />
+                Gelir Ekle
+            </button>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+            <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                <h3 className="text-sm font-medium text-muted-foreground">Toplam Gelir (Ay)</h3>
+                <div className="mt-2 text-3xl font-bold text-green-500">{fmt(totalIncome)}</div>
+            </div>
+            <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                <h3 className="text-sm font-medium text-muted-foreground">Bekleyen Ödemeler</h3>
+                <div className="mt-2 text-3xl font-bold text-yellow-500">{fmt(pendingIncome)}</div>
+            </div>
+            <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
+                <h3 className="text-sm font-medium text-muted-foreground">Ortalama İşlem Başı</h3>
+                <div className="mt-2 text-3xl font-bold text-blue-500">{fmt(avgDailyIncome)}</div>
+            </div>
+        </div>
+
+        {/* Table Section */}
+        <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+            <div className="p-6 border-b flex items-center justify-between gap-4">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                        type="text"
+                        placeholder="Gelirlerde ara..."
+                        className="pl-9 pr-4 py-2 w-full bg-secondary/50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
                 </div>
-                <button
-                    onClick={() => {
-                        setEditingId(null);
-                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false });
-                        setShowAddModal(true);
-                    }}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
-                >
-                    <Plus className="w-5 h-5" />
-                    Gelir Ekle
-                </button>
+                <div className="flex gap-2">
+                    <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
+                        <CalendarIcon className="w-5 h-5" />
+                    </button>
+                    <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
+                        <FileText className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-3">
-                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
-                    <h3 className="text-sm font-medium text-muted-foreground">Toplam Gelir (Ay)</h3>
-                    <div className="mt-2 text-3xl font-bold text-green-500">{fmt(totalIncome)}</div>
-                </div>
-                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
-                    <h3 className="text-sm font-medium text-muted-foreground">Bekleyen Ödemeler</h3>
-                    <div className="mt-2 text-3xl font-bold text-yellow-500">{fmt(pendingIncome)}</div>
-                </div>
-                <div className="p-6 rounded-xl bg-card border border-border shadow-sm">
-                    <h3 className="text-sm font-medium text-muted-foreground">Ortalama İşlem Başı</h3>
-                    <div className="mt-2 text-3xl font-bold text-blue-500">{fmt(avgDailyIncome)}</div>
-                </div>
-            </div>
-
-            {/* Table Section */}
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
-                <div className="p-6 border-b flex items-center justify-between gap-4">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input
-                            type="text"
-                            placeholder="Gelirlerde ara..."
-                            className="pl-9 pr-4 py-2 w-full bg-secondary/50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                        />
-                    </div>
-                    <div className="flex gap-2">
-                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
-                            <CalendarIcon className="w-5 h-5" />
-                        </button>
-                        <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground">
-                            <FileText className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-secondary/50 text-muted-foreground font-medium">
-                            <tr>
-                                <th className="px-6 py-4">Kaynak</th>
-                                <th className="px-6 py-4">Kategori</th>
-                                <th className="px-6 py-4">Açıklama</th>
-                                <th className="px-6 py-4">Tarih</th>
-                                <th className="px-6 py-4">Tutar</th>
-                                <th className="px-6 py-4">Durum</th>
-                                <th className="px-6 py-4 text-right">İşlemler</th>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-secondary/50 text-muted-foreground font-medium">
+                        <tr>
+                            <th className="px-6 py-4">Kaynak</th>
+                            <th className="px-6 py-4">Kategori</th>
+                            <th className="px-6 py-4">Açıklama</th>
+                            <th className="px-6 py-4">Tarih</th>
+                            <th className="px-6 py-4">Tutar</th>
+                            <th className="px-6 py-4">Durum</th>
+                            <th className="px-6 py-4 text-right">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                        {incomes.map((income) => (
+                            <tr key={income.id} className="hover:bg-secondary/30 transition-colors">
+                                <td className="px-6 py-4 font-medium text-foreground">{income.source}</td>
+                                <td className="px-6 py-4 text-muted-foreground">{income.category}</td>
+                                <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">{income.description}</td>
+                                <td className="px-6 py-4 text-muted-foreground">
+                                    <div className="flex flex-col">
+                                        <span>{income.date}</span>
+                                        {income.isRecurring && (
+                                            <span className="text-[10px] text-blue-400 font-medium mt-0.5">Her Ay Tekrarla</span>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 font-medium text-green-500">{income.amount}</td>
+                                <td className="px-6 py-4">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500">
+                                        {income.status}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <button
+                                            onClick={() => handleEdit(income)}
+                                            className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
+                                        >
+                                            <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(income.id)}
+                                            className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                            {incomes.map((income) => (
-                                <tr key={income.id} className="hover:bg-secondary/30 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-foreground">{income.source}</td>
-                                    <td className="px-6 py-4 text-muted-foreground">{income.category}</td>
-                                    <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">{income.description}</td>
-                                    <td className="px-6 py-4 text-muted-foreground">
-                                        <div className="flex flex-col">
-                                            <span>{income.date}</span>
-                                            {income.isRecurring && (
-                                                <span className="text-[10px] text-blue-400 font-medium mt-0.5">Her Ay Tekrarla</span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 font-medium text-green-500">{income.amount}</td>
-                                    <td className="px-6 py-4">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500">
-                                            {income.status}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => handleEdit(income)}
-                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-blue-500 hover:text-blue-400"
-                                            >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(income.id)}
-                                                className="p-2 hover:bg-secondary rounded-lg transition-colors text-red-500 hover:text-red-400"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                        ))}
+                    </tbody>
+                </table>
             </div>
+        </div>
 
-            {/* Add Income Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
-                        <h3 className="text-xl font-bold mb-4">{editingId ? 'Gelir Düzenle' : 'Yeni Gelir Ekle'}</h3>
-                        <form onSubmit={handleAddIncome} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-muted-foreground">Tutar (TL)</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                        placeholder="0.00"
-                                        value={newIncome.amount}
-                                        onChange={(e) => setNewIncome({ ...newIncome, amount: e.target.value })}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-muted-foreground">Tarih</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
-                                        value={newIncome.date}
-                                        onChange={(e) => setNewIncome({ ...newIncome, date: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
+        {/* Add Income Modal */}
+        {showAddModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
+                    <h3 className="text-xl font-bold mb-4">{editingId ? 'Gelir Düzenle' : 'Yeni Gelir Ekle'}</h3>
+                    <form onSubmit={handleAddIncome} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Kaynak / Başlık</label>
+                                <label className="text-sm font-medium text-muted-foreground">Tutar (TL)</label>
                                 <input
-                                    type="text"
+                                    type="number"
                                     required
                                     className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder="Örn: Günlük Nakit Satış"
-                                    value={newIncome.source}
-                                    onChange={(e) => setNewIncome({ ...newIncome, source: e.target.value })}
+                                    placeholder="0.00"
+                                    value={newIncome.amount}
+                                    onChange={(e) => setNewIncome({ ...newIncome, amount: e.target.value })}
                                 />
                             </div>
-
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Kategori</label>
+                                <label className="text-sm font-medium text-muted-foreground">Tarih</label>
+                                <input
+                                    type="date"
+                                    required
+                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
+                                    value={newIncome.date}
+                                    onChange={(e) => setNewIncome({ ...newIncome, date: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-muted-foreground">Kaynak / Başlık</label>
+                            <input
+                                type="text"
+                                required
+                                className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                placeholder="Örn: Günlük Nakit Satış"
+                                value={newIncome.source}
+                                onChange={(e) => setNewIncome({ ...newIncome, source: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-muted-foreground">Kategori</label>
+                            <select
+                                className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                value={newIncome.category}
+                                onChange={(e) => setNewIncome({ ...newIncome, category: e.target.value })}
+                            >
+                                <option value="">Seçiniz...</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex items-center space-x-2 bg-secondary/30 p-3 rounded-lg border border-border/50">
+                            <input
+                                type="checkbox"
+                                id="addTax"
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                checked={newIncome.addTax}
+                                onChange={(e) => setNewIncome({ ...newIncome, addTax: e.target.checked })}
+                            />
+                            <label htmlFor="addTax" className="text-sm font-medium leading-none cursor-pointer select-none flex-1">
+                                KDV Dahil (Fatura/Fiş Kesildi)
+                            </label>
+                        </div>
+
+                        {newIncome.addTax && (
+                            <div className="space-y-2 animate-in slide-in-from-top-2">
+                                <label className="text-sm font-medium text-muted-foreground">KDV Oranı</label>
                                 <select
                                     className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    value={newIncome.category}
-                                    onChange={(e) => setNewIncome({ ...newIncome, category: e.target.value })}
+                                    value={newIncome.taxRate}
+                                    onChange={(e) => setNewIncome({ ...newIncome, taxRate: Number(e.target.value) })}
                                 >
-                                    <option value="">Seçiniz...</option>
-                                    {categories.map((cat) => (
-                                        <option key={cat.id} value={cat.name}>{cat.name}</option>
-                                    ))}
+                                    <option value={1}>%1</option>
+                                    <option value={10}>%10</option>
+                                    <option value={20}>%20</option>
                                 </select>
+                                <div className="text-xs text-muted-foreground text-right">
+                                    Tahmini Vergi: ₺{((parseFloat(newIncome.amount || '0') * newIncome.taxRate) / (100 + newIncome.taxRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </div>
                             </div>
+                        )}
 
-                            <div className="flex items-center space-x-2 bg-secondary/30 p-3 rounded-lg border border-border/50">
-                                <input
-                                    type="checkbox"
-                                    id="isRecurring"
-                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                    checked={newIncome.isRecurring}
-                                    onChange={(e) => setNewIncome({ ...newIncome, isRecurring: e.target.checked })}
-                                />
-                                <label htmlFor="isRecurring" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none">
-                                    Her ayın bu günü tekrarla
-                                </label>
-                            </div>
+                        <div className="flex items-center space-x-2 bg-secondary/30 p-3 rounded-lg border border-border/50">
+                            <input
+                                type="checkbox"
+                                id="isRecurring"
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                checked={newIncome.isRecurring}
+                                onChange={(e) => setNewIncome({ ...newIncome, isRecurring: e.target.checked })}
+                            />
+                            <label htmlFor="isRecurring" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none">
+                                Her ayın bu günü tekrarla
+                            </label>
+                        </div>
 
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
-                                <textarea
-                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none h-24 resize-none"
-                                    placeholder="İşlem hakkında detaylı açıklama..."
-                                    value={newIncome.description}
-                                    onChange={(e) => setNewIncome({ ...newIncome, description: e.target.value })}
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
+                            <textarea
+                                className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none h-24 resize-none"
+                                placeholder="İşlem hakkında detaylı açıklama..."
+                                value={newIncome.description}
+                                onChange={(e) => setNewIncome({ ...newIncome, description: e.target.value })}
+                            />
+                        </div>
 
-                            <div className="flex justify-end gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowAddModal(false);
-                                        setEditingId(null);
-                                    }}
-                                    className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
-                                >
-                                    İptal
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
-                                >
-                                    {editingId ? 'Güncelle' : 'Kaydet'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddModal(false);
+                                    setEditingId(null);
+                                }}
+                                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
+                            >
+                                İptal
+                            </button>
+                            <button
+                                type="submit"
+                                className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                            >
+                                {editingId ? 'Güncelle' : 'Kaydet'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            )}
-        </div>
-    );
+            </div>
+        )}
+    </div>
+);
 }

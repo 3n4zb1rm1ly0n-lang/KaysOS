@@ -101,6 +101,46 @@ export default function InvoicesPage() {
         }
     };
 
+    const handleMarkAsPaid = async (expense: RecurringExpense) => {
+        if (!confirm('Bu faturayı bu ay için ödendi olarak işaretlemek ve gidere işlemek istiyor musunuz?')) return;
+
+        try {
+            const today = new Date().toISOString().split('T')[0];
+
+            // 1. Update Invoice Status
+            const { error: updateError } = await supabase
+                .from('recurring_expenses')
+                .update({
+                    status: 'Ödendi',
+                    last_paid_date: today
+                })
+                .eq('id', expense.id);
+
+            if (updateError) throw updateError;
+
+            // 2. Create Expense Record
+            const { error: insertError } = await supabase
+                .from('expenses')
+                .insert([{
+                    amount: expense.amount,
+                    recipient: expense.provider,
+                    category: expense.category,
+                    date: today,
+                    description: `${expense.name} (Fatura Ödemesi)`,
+                    payment_method: 'Nakit' // Default to Cash
+                }]);
+
+            if (insertError) throw insertError;
+
+            // 3. Update Local State
+            setExpenses(expenses.map(e => e.id === expense.id ? { ...e, status: 'Ödendi', lastPaidDate: today } : e));
+
+        } catch (error) {
+            console.error('Error marking invoice as paid:', error);
+            alert('İşlem sırasında bir hata oluştu.');
+        }
+    };
+
     const handleAddExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -272,7 +312,10 @@ export default function InvoicesPage() {
                             </div>
 
                             {expense.status !== 'Ödendi' ? (
-                                <button className="w-full py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors">
+                                <button
+                                    onClick={() => handleMarkAsPaid(expense)}
+                                    className="w-full py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+                                >
                                     Ödendi Olarak İşaretle
                                 </button>
                             ) : (

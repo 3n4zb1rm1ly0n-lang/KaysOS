@@ -7,7 +7,14 @@
   --foreground: #E5E7EB;
 }
 
+
 body {
   color: var(--foreground);
   background: var(--background);
+}
+
+@layer base {
+  textarea {
+    color: black;
+  }
 }

@@ -44,15 +44,31 @@ export default function DebtsPage() {
             if (error) throw error;
 
             if (data) {
-                const formattedData: Debt[] = data.map(item => ({
-                    id: item.id,
-                    amount: `₺${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
-                    creditor: item.creditor,
-                    category: item.category,
-                    createdDate: item.created_date,
-                    dueDate: item.due_date,
-                    description: item.description,
-                    status: item.status as 'Ödendi' | 'Bekliyor' | 'Gecikmiş'
+                const today = new Date().toISOString().split('T')[0];
+
+                const formattedData: Debt[] = await Promise.all(data.map(async (item) => {
+                    let status = item.status;
+
+                    // Tarihi geçmiş ve ödenmemişse otomatik olarak 'Gecikmiş' yap
+                    if (status !== 'Ödendi' && item.due_date < today) {
+                        status = 'Gecikmiş';
+
+                        // DB'yi de güncelle (Arka planda)
+                        if (item.status !== 'Gecikmiş') {
+                            await supabase.from('debts').update({ status: 'Gecikmiş' }).eq('id', item.id);
+                        }
+                    }
+
+                    return {
+                        id: item.id,
+                        amount: `₺${item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`,
+                        creditor: item.creditor,
+                        category: item.category,
+                        createdDate: item.created_date,
+                        dueDate: item.due_date,
+                        description: item.description,
+                        status: status as 'Ödendi' | 'Bekliyor' | 'Gecikmiş'
+                    };
                 }));
                 setDebts(formattedData);
             }

@@ -20,13 +20,14 @@ import {
 import { tr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { calculateEstimatedIncomeTax } from '@/lib/tax-utils';
 
 interface CalendarEvent {
     id: string;
     date: string;
     title: string;
     amount: string;
-    type: 'incomes' | 'expenses' | 'debts' | 'invoices';
+    type: 'incomes' | 'expenses' | 'debts' | 'invoices' | 'tax';
 }
 
 const EventBadge = ({ type, title, amount }: { type: string, title: string, amount: string }) => {
@@ -36,6 +37,7 @@ const EventBadge = ({ type, title, amount }: { type: string, title: string, amou
             case 'invoices': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
             case 'debts': return 'bg-red-500/10 text-red-500 border-red-500/20';
             case 'expenses': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+            case 'tax': return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
             default: return 'bg-gray-500/10 text-gray-500';
         }
     };
@@ -112,28 +114,114 @@ export default function CalendarPage() {
 
             // 4. Sabit Ödemeler (Faturalar) - Seçili takvim ayına göre oluştur
             invoicesRes.data?.forEach((item: any) => {
-                // Her ayın X günü. Mevcut görüntülenen ayın o gününü oluştur.
+                // Her ayın X günü.
                 try {
-                    // Mevcut ayın o günü
                     let paymentDate = setDate(currentDate, item.day_of_month);
-
-                    // Eğer ayın son gününden sonraysa (örn: Şubat 30 yok), ayın son gününü al
-                    if (item.day_of_month > 28) { // Basit kontrol, date-fns setDate bunu genelde handle eder ama emin olalım
-                        // date-fns setDate mevcut ay sınırlarını aşarsa bir sonraki aya atar. Bunu önlemek gerekebilir ama şimdilik basit tutalım.
+                    if (item.day_of_month > 28) {
+                        // date-fns handles overflow, but for simplicity we keep it standard
                     }
 
                     newEvents.push({
-                        id: `inv-${item.id}-${format(currentDate, 'MM')}`, // Unique ID per month
+                        id: `inv-${item.id}-${format(currentDate, 'MM')}`,
                         date: format(paymentDate, 'yyyy-MM-dd'),
                         title: `${item.name} (${item.provider})`,
                         amount: `₺${item.amount}`,
                         type: 'invoices'
                     });
-
                 } catch (e) {
                     console.error("Date calculation error", e);
                 }
             });
+
+            // 5. KDV Ödemesi (BİR ÖNCEKİ AYIN VERİSİNE GÖRE)
+            // KDV Deadline is usually 28th of current month for previous month's activity.
+            const kdvDeadline = setDate(currentDate, 28);
+
+            // Fetch previous month's data for KDV calc
+            const prevMonthStart = format(startOfMonth(subMonths(currentDate, 1)), 'yyyy-MM-dd');
+            const prevMonthEnd = format(endOfMonth(subMonths(currentDate, 1)), 'yyyy-MM-dd');
+
+            const [prevIncRes, prevExpRes] = await Promise.all([
+                supabase.from('incomes').select('tax_amount').gte('date', prevMonthStart).lte('date', prevMonthEnd),
+                supabase.from('expenses').select('tax_amount').gte('date', prevMonthStart).lte('date', prevMonthEnd)
+            ]);
+
+            const totalIncTax = prevIncRes.data?.reduce((acc, curr) => acc + (curr.tax_amount || 0), 0) || 0;
+            const totalExpTax = prevExpRes.data?.reduce((acc, curr) => acc + (curr.tax_amount || 0), 0) || 0;
+            const kdvPayable = totalIncTax - totalExpTax;
+
+            if (kdvPayable > 0) {
+                newEvents.push({
+                    id: `kdv-${format(currentDate, 'yyyy-MM')}`,
+                    date: format(kdvDeadline, 'yyyy-MM-dd'),
+                    title: 'KDV Ödemesi',
+                    amount: `₺${kdvPayable.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+                    type: 'tax'
+                });
+            }
+
+            // 6. Geçici Vergi (17 Mayıs, 17 Ağustos, 17 Kasım, 17 Şubat)
+            const month = currentDate.getMonth(); // 0-11
+            const isProvisionalMonth = [1, 4, 7, 10].includes(month); // Feb, May, Aug, Nov
+
+            if (isProvisionalMonth) {
+                // Calculate simple estimate for the relevant quarter
+                // If May (4), Q1 (Jan-Mar)
+                // If Aug (7), Q2 (Apr-Jun)
+                // If Nov (10), Q3 (Jul-Sep)
+                // If Feb (1), Q4 (Oct-Dec)
+
+                let qStart = new Date(currentDate.getFullYear(), month - 4, 1); // rough approx
+                if (month === 1) qStart = new Date(currentDate.getFullYear() - 1, 9, 1); // Oct prev year
+                else qStart = new Date(currentDate.getFullYear(), month - 4, 1); // Jan, Apr, Jul
+
+                // Actually simpler: 
+                // May(4) -> Jan(0) - Mar(2)
+                // Aug(7) -> Apr(3) - Jun(5)
+                // Nov(10) -> Jul(6) - Sep(8)
+                // Feb(1) -> Oct(9) - Dec(11) (Prev Year) (Often declared Mar 1 annual, but let's keep simple)
+
+                let qStartStr = '';
+                let qEndStr = '';
+
+                if (month === 4) { // May -> Jan-Mar
+                    qStartStr = format(new Date(currentDate.getFullYear(), 0, 1), 'yyyy-MM-dd');
+                    qEndStr = format(new Date(currentDate.getFullYear(), 2, 31), 'yyyy-MM-dd');
+                } else if (month === 7) { // Aug -> Apr-Jun
+                    qStartStr = format(new Date(currentDate.getFullYear(), 3, 1), 'yyyy-MM-dd');
+                    qEndStr = format(new Date(currentDate.getFullYear(), 5, 30), 'yyyy-MM-dd');
+                } else if (month === 10) { // Nov -> Jul-Sep
+                    qStartStr = format(new Date(currentDate.getFullYear(), 6, 1), 'yyyy-MM-dd');
+                    qEndStr = format(new Date(currentDate.getFullYear(), 8, 30), 'yyyy-MM-dd');
+                } else if (month === 1) { // Feb -> Oct-Dec prev year
+                    qStartStr = format(new Date(currentDate.getFullYear() - 1, 9, 1), 'yyyy-MM-dd');
+                    qEndStr = format(new Date(currentDate.getFullYear() - 1, 11, 31), 'yyyy-MM-dd');
+                }
+
+                if (qStartStr) {
+                    const [qInc, qExp] = await Promise.all([
+                        supabase.from('incomes').select('amount, tax_amount').gte('date', qStartStr).lte('date', qEndStr),
+                        supabase.from('expenses').select('amount, tax_amount').gte('date', qStartStr).lte('date', qEndStr)
+                    ]);
+
+                    // Net Profit for Estimate
+                    const qIncomeTotal = qInc.data?.reduce((acc, curr) => acc + (curr.amount - (curr.tax_amount || 0)), 0) || 0;
+                    const qExpenseTotal = qExp.data?.reduce((acc, curr) => acc + (curr.amount - (curr.tax_amount || 0)), 0) || 0;
+                    const qProfit = qIncomeTotal - qExpenseTotal;
+
+                    if (qProfit > 0) {
+                        const taxEst = calculateEstimatedIncomeTax(qIncomeTotal, qExpenseTotal);
+
+                        newEvents.push({
+                            id: `prov-${format(currentDate, 'yyyy-MM')}`,
+                            date: format(setDate(currentDate, 17), 'yyyy-MM-dd'),
+                            title: 'Geçici Vergi (Tahmini)',
+                            amount: `~₺${taxEst.tax.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
+                            type: 'tax'
+                        });
+                    }
+                }
+            }
 
             setEvents(newEvents);
         } catch (error) {
@@ -181,6 +269,7 @@ export default function CalendarPage() {
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500"></span> Faturalar</div>
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500"></span> Borçlar</div>
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Giderler</div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-purple-500"></span> Vergiler</div>
             </div>
 
             <div className="flex-1 bg-card border rounded-lg shadow-sm overflow-hidden flex flex-col">
@@ -237,6 +326,6 @@ export default function CalendarPage() {
                     })}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

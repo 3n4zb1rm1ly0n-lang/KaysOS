@@ -9,7 +9,9 @@ create table incomes (
   date date not null,
   description text,
   status text default 'Gelir',
-  is_recurring boolean default false
+  is_recurring boolean default false,
+  tax_rate numeric default 0,
+  tax_amount numeric default 0
 );
 
 -- Giderler Tablosu
@@ -21,7 +23,9 @@ create table expenses (
   category text,
   date date not null,
   description text,
-  payment_method text -- Nakit, Kredi Kartı, Havale
+  payment_method text, -- Nakit, Kredi Kartı, Havale
+  tax_rate numeric default 0, -- KDV Oranı (0, 1, 10, 20)
+  tax_amount numeric default 0 -- Hesaplanan KDV Tutarı
 );
 
 -- Borçlar Tablosu

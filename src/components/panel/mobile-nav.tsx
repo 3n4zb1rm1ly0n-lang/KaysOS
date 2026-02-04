@@ -58,7 +58,7 @@ export function MobileNav() {
 
                         <div className="pt-6 border-t mt-auto space-y-2">
                             <Link
-                                href="/settings"
+                                href="/dashboard/settings"
                                 onClick={() => setIsOpen(false)}
                                 className="flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg hover:bg-secondary/50 transition-colors"
                             >

@@ -13,6 +13,8 @@ interface Expense {
     date: string;
     description: string;
     paymentMethod: 'Nakit' | 'Kredi Kartı' | 'Havale';
+    taxRate?: number;
+    taxAmount?: number;
 }
 
 export default function ExpensesPage() {
@@ -27,7 +29,9 @@ export default function ExpensesPage() {
         category: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
-        paymentMethod: 'Nakit' as 'Nakit' | 'Kredi Kartı' | 'Havale'
+        paymentMethod: 'Nakit' as 'Nakit' | 'Kredi Kartı' | 'Havale',
+        addTax: false,
+        taxRate: 20
     });
 
     useEffect(() => {
@@ -69,7 +73,9 @@ export default function ExpensesPage() {
                     category: item.category,
                     date: item.date,
                     description: item.description,
-                    paymentMethod: item.payment_method
+                    paymentMethod: item.payment_method,
+                    taxRate: item.tax_rate,
+                    taxAmount: item.tax_amount
                 }));
                 setExpenses(formattedData);
             }
@@ -121,7 +127,9 @@ export default function ExpensesPage() {
             category: expense.category,
             date: expense.date,
             description: expense.description,
-            paymentMethod: expense.paymentMethod
+            paymentMethod: expense.paymentMethod,
+            addTax: (expense.taxRate || 0) > 0,
+            taxRate: expense.taxRate || 20
         });
         setShowAddModal(true);
     };
@@ -130,6 +138,13 @@ export default function ExpensesPage() {
         e.preventDefault();
         try {
             const numericAmount = parseFloat(newExpense.amount);
+            let taxRate = 0;
+            let taxAmount = 0;
+
+            if (newExpense.addTax) {
+                taxRate = Number(newExpense.taxRate);
+                taxAmount = (numericAmount * taxRate) / (100 + taxRate);
+            }
 
             if (editingId) {
                 // Update
@@ -141,7 +156,9 @@ export default function ExpensesPage() {
                         category: newExpense.category,
                         date: newExpense.date,
                         description: newExpense.description,
-                        payment_method: newExpense.paymentMethod
+                        payment_method: newExpense.paymentMethod,
+                        tax_rate: taxRate,
+                        tax_amount: taxAmount
                     })
                     .eq('id', editingId)
                     .select();
@@ -156,7 +173,9 @@ export default function ExpensesPage() {
                         category: data[0].category,
                         date: data[0].date,
                         description: data[0].description,
-                        paymentMethod: data[0].payment_method
+                        paymentMethod: data[0].payment_method,
+                        taxRate: data[0].tax_rate,
+                        taxAmount: data[0].tax_amount
                     };
                     setExpenses(expenses.map(e => e.id === editingId ? updatedExpense : e));
                 }
@@ -171,7 +190,9 @@ export default function ExpensesPage() {
                             category: newExpense.category,
                             date: newExpense.date,
                             description: newExpense.description,
-                            payment_method: newExpense.paymentMethod
+                            payment_method: newExpense.paymentMethod,
+                            tax_rate: taxRate,
+                            tax_amount: taxAmount
                         }
                     ])
                     .select();
@@ -186,12 +207,16 @@ export default function ExpensesPage() {
                         category: data[0].category,
                         date: data[0].date,
                         description: data[0].description,
-                        paymentMethod: data[0].payment_method
+                        paymentMethod: data[0].payment_method,
+                        taxRate: data[0].tax_rate,
+                        taxAmount: data[0].tax_amount
                     };
                     setExpenses([addedExpense, ...expenses]);
                 }
             }
 
+            setShowAddModal(false);
+            setEditingId(null);
             setShowAddModal(false);
             setEditingId(null);
             setNewExpense({
@@ -200,7 +225,9 @@ export default function ExpensesPage() {
                 category: '',
                 date: new Date().toISOString().split('T')[0],
                 description: '',
-                paymentMethod: 'Nakit'
+                paymentMethod: 'Nakit',
+                addTax: false,
+                taxRate: 20
             });
         } catch (error) {
             console.error('Error saving expense:', error);
@@ -227,7 +254,9 @@ export default function ExpensesPage() {
                             category: '',
                             date: new Date().toISOString().split('T')[0],
                             description: '',
-                            paymentMethod: 'Nakit'
+                            paymentMethod: 'Nakit',
+                            addTax: false,
+                            taxRate: 20
                         });
                         setShowAddModal(true);
                     }}
@@ -317,9 +346,16 @@ export default function ExpensesPage() {
                                     <td className="px-6 py-4 text-muted-foreground max-w-xs truncate">{expense.description}</td>
                                     <td className="px-6 py-4 text-muted-foreground">{expense.date}</td>
                                     <td className="px-6 py-4">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-500 border border-gray-500/20">
-                                            {expense.paymentMethod}
-                                        </span>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-500 border border-gray-500/20 max-w-fit">
+                                                {expense.paymentMethod}
+                                            </span>
+                                            {(expense.taxAmount || 0) > 0 && (
+                                                <span className="text-[10px] text-orange-400 font-medium ml-1">
+                                                    KDV (%{expense.taxRate}): ₺{expense.taxAmount?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 font-medium text-red-500">-{expense.amount}</td>
                                     <td className="px-6 py-4 text-right">

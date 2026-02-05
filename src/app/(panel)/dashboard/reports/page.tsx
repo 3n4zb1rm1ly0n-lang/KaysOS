@@ -163,7 +163,8 @@ export default function AccountingPage() {
         amount: '',
         taxRate: 20,
         date: new Date().toISOString().split('T')[0],
-        category: 'Diğer'
+        category: 'Diğer',
+        addWithholding: false // New field
     });
 
     const handleDelete = async (id: string, type: string) => {
@@ -188,6 +189,14 @@ export default function AccountingPage() {
             const rate = Number(newEntry.taxRate);
             const taxAmount = (numericAmount * rate) / (100 + rate);
 
+            let withholdingAmount = 0;
+            let withholdingRate = 0;
+
+            if (entryType === 'income' && newEntry.addWithholding) {
+                withholdingRate = 20; // User requested 20% of VAT
+                withholdingAmount = taxAmount * (withholdingRate / 100);
+            }
+
             const { error } = await supabase.from('tax_entries').insert([{
                 description: newEntry.description,
                 amount: numericAmount,
@@ -195,7 +204,9 @@ export default function AccountingPage() {
                 tax_amount: taxAmount,
                 date: newEntry.date,
                 category: newEntry.category,
-                entry_type: entryType // Insert the type
+                entry_type: entryType,
+                withholding_rate: withholdingRate,
+                withholding_amount: withholdingAmount
             }]);
 
             if (error) throw error;
@@ -207,7 +218,8 @@ export default function AccountingPage() {
                 amount: '',
                 taxRate: 20,
                 date: new Date().toISOString().split('T')[0],
-                category: 'Diğer'
+                category: 'Diğer',
+                addWithholding: false
             });
         } catch (error) {
             console.error('Error adding tax entry:', error);
@@ -653,6 +665,27 @@ export default function AccountingPage() {
                                     </select>
                                 </div>
                             </div>
+
+                            {/* Tevkifat Checkbox - Only for Income */}
+                            {entryType === 'income' && (
+                                <div className="flex items-center space-x-2 bg-secondary/30 p-3 rounded-lg border border-border/50">
+                                    <input
+                                        type="checkbox"
+                                        id="addWithholding"
+                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        checked={newEntry.addWithholding}
+                                        onChange={(e) => setNewEntry({ ...newEntry, addWithholding: e.target.checked })}
+                                    />
+                                    <label htmlFor="addWithholding" className="text-sm font-medium leading-none cursor-pointer select-none flex-1">
+                                        KDV Tevkifatı Var (%50)
+                                    </label>
+                                    {newEntry.addWithholding && (
+                                        <div className="text-xs text-muted-foreground font-mono">
+                                            -₺{(((parseFloat(newEntry.amount || '0') * newEntry.taxRate) / (100 + newEntry.taxRate)) * 0.5).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="flex justify-end gap-3 mt-6">
                                 <button

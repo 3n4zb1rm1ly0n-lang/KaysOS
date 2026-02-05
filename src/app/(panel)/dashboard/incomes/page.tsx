@@ -17,6 +17,8 @@ interface Income {
     taxRate?: number;
     taxAmount?: number;
     invoiceDate?: string;
+    withholdingRate?: number;
+    withholdingAmount?: number;
 }
 
 export default function IncomesPage() {
@@ -30,11 +32,12 @@ export default function IncomesPage() {
         source: '',
         category: '',
         date: new Date().toISOString().split('T')[0],
-        invoiceDate: '', // New Field
+        invoiceDate: '',
         description: '',
         isRecurring: false,
         addTax: false,
-        taxRate: 20
+        taxRate: 20,
+        addWithholding: false // New
     });
 
     // Verileri çek
@@ -79,7 +82,9 @@ export default function IncomesPage() {
                     isRecurring: item.is_recurring,
                     taxRate: item.tax_rate,
                     taxAmount: item.tax_amount,
-                    invoiceDate: item.invoice_date // Load from DB
+                    invoiceDate: item.invoice_date,
+                    withholdingRate: item.withholding_rate,
+                    withholdingAmount: item.withholding_amount
                 }));
                 setIncomes(formattedData);
             }
@@ -97,11 +102,18 @@ export default function IncomesPage() {
             const numericAmount = parseFloat(newIncome.amount);
             let taxRate = 0;
             let taxAmount = 0;
+            let withholdingRate = 0;
+            let withholdingAmount = 0;
 
             if (newIncome.addTax) {
                 taxRate = Number(newIncome.taxRate);
                 // Brüt'ten vergi hesaplama (KDV Dahil)
                 taxAmount = (numericAmount * taxRate) / (100 + taxRate);
+
+                if (newIncome.addWithholding) {
+                    withholdingRate = 20; // 20% of Tax Amount as per user request
+                    withholdingAmount = taxAmount * (withholdingRate / 100);
+                }
             }
 
             const invoiceDateToSave = newIncome.addTax && newIncome.invoiceDate ? newIncome.invoiceDate : newIncome.date;
@@ -119,7 +131,9 @@ export default function IncomesPage() {
                         description: newIncome.description,
                         is_recurring: newIncome.isRecurring,
                         tax_rate: taxRate,
-                        tax_amount: taxAmount
+                        tax_amount: taxAmount,
+                        withholding_rate: withholdingRate,
+                        withholding_amount: withholdingAmount
                     })
                     .eq('id', editingId)
                     .select();
@@ -141,7 +155,9 @@ export default function IncomesPage() {
                             status: 'Gelir',
                             is_recurring: newIncome.isRecurring,
                             tax_rate: taxRate,
-                            tax_amount: taxAmount
+                            tax_amount: taxAmount,
+                            withholding_rate: withholdingRate,
+                            withholding_amount: withholdingAmount
                         }
                     ])
                     .select();
@@ -154,7 +170,7 @@ export default function IncomesPage() {
             setEditingId(null);
             setNewIncome({
                 amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], invoiceDate: '',
-                description: '', isRecurring: false, addTax: false, taxRate: 20
+                description: '', isRecurring: false, addTax: false, taxRate: 20, addWithholding: false
             });
         } catch (error) {
             console.error('Error saving income:', error);
@@ -195,7 +211,8 @@ export default function IncomesPage() {
             isRecurring: income.isRecurring || false,
             addTax: (income.taxRate || 0) > 0,
             taxRate: income.taxRate || 20,
-            invoiceDate: income.invoiceDate || income.date // Load existing or fallback
+            invoiceDate: income.invoiceDate || income.date,
+            addWithholding: (income.withholdingRate || 0) > 0 // Determine from data
         });
         setShowAddModal(true);
     };
@@ -226,7 +243,7 @@ export default function IncomesPage() {
                 <button
                     onClick={() => {
                         setEditingId(null);
-                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], invoiceDate: '', description: '', isRecurring: false, addTax: false, taxRate: 20 });
+                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], invoiceDate: '', description: '', isRecurring: false, addTax: false, taxRate: 20, addWithholding: false });
                         setShowAddModal(true);
                     }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
@@ -425,8 +442,30 @@ export default function IncomesPage() {
                                                 <p className="text-[10px] text-muted-foreground">Boş bırakılırsa tahsilat tarihi kullanılır.</p>
                                             </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground text-right pt-2 border-t border-border/10">
-                                            Tahmini Vergi: ₺{((parseFloat(newIncome.amount || '0') * newIncome.taxRate) / (100 + newIncome.taxRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+
+                                        {/* Tevkifat Checkbox */}
+                                        <div className="flex items-center space-x-2 pt-2 border-t border-border/10">
+                                            <input
+                                                type="checkbox"
+                                                id="addWithholdingIncome"
+                                                className="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary"
+                                                checked={newIncome.addWithholding}
+                                                onChange={(e) => setNewIncome({ ...newIncome, addWithholding: e.target.checked })}
+                                            />
+                                            <label htmlFor="addWithholdingIncome" className="text-xs font-medium cursor-pointer select-none flex-1">
+                                                KDV Tevkifatı Var (%20)
+                                            </label>
+                                        </div>
+
+                                        <div className="text-xs text-muted-foreground text-right pt-2 border-t border-border/10 flex justify-between items-center">
+                                            {newIncome.addWithholding ? (
+                                                <span className="text-orange-500 font-medium">
+                                                    (Tevfikat: -₺{(((parseFloat(newIncome.amount || '0') * newIncome.taxRate) / (100 + newIncome.taxRate)) * 0.2).toLocaleString(undefined, { maximumFractionDigits: 2 })})
+                                                </span>
+                                            ) : <span></span>}
+                                            <span className={newIncome.addWithholding ? 'line-through opacity-50' : ''}>
+                                                Tahmini Vergi: ₺{((parseFloat(newIncome.amount || '0') * newIncome.taxRate) / (100 + newIncome.taxRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
                                         </div>
                                     </div>
                                 )}

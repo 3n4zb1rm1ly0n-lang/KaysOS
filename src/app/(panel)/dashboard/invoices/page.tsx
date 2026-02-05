@@ -1,6 +1,11 @@
 
 'use client';
 
+// Migration to add tax_rate to recurring_expenses if not exists
+// You should run this in SQL editor:
+// ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS tax_rate numeric default 0;
+
+
 import { useState, useEffect } from 'react';
 import {
     Plus,
@@ -19,6 +24,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
+// ... (Imports stay same)
+
 interface RecurringExpense {
     id: string;
     name: string;
@@ -27,7 +34,7 @@ interface RecurringExpense {
     dayOfMonth: number;
     category: 'Enerji' | 'Su' | 'İletişim' | 'Kira' | 'Vergi' | 'Diğer';
     status: 'Ödendi' | 'Yaklaşıyor' | 'Gecikti' | 'Bekliyor';
-    autoPay: boolean;
+    taxRate: number; // Replaces autoPay
     lastPaidDate?: string;
 }
 
@@ -37,6 +44,7 @@ const CategoryIcon = ({ category }: { category: string }) => {
         case 'Su': return <Droplets className="w-5 h-5 text-blue-500" />;
         case 'İletişim': return <Wifi className="w-5 h-5 text-purple-500" />;
         case 'Kira': return <Home className="w-5 h-5 text-orange-500" />;
+        case 'Vergi': return <FileText className="w-5 h-5 text-red-500" />;
         default: return <FileText className="w-5 h-5 text-gray-500" />;
     }
 };
@@ -52,7 +60,8 @@ export default function InvoicesPage() {
         amount: '',
         dayOfMonth: '',
         category: 'Diğer',
-        autoPay: false
+        addTax: false,
+        taxRate: 20
     });
 
     useEffect(() => {
@@ -77,10 +86,9 @@ export default function InvoicesPage() {
                     dayOfMonth: item.day_of_month,
                     category: item.category as any,
                     status: item.status as any,
-                    autoPay: item.auto_pay,
+                    taxRate: item.tax_rate || 0,
                     lastPaidDate: item.last_paid_date
                 }));
-                // Status Calculation Logic could go here (e.g. comparing date with dayOfMonth)
                 setExpenses(formattedData);
             }
         } catch (error) {
@@ -90,9 +98,7 @@ export default function InvoicesPage() {
         }
     };
 
-    // Bu ayın toplam tahmini gideri
     const totalEstimated = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-    // Bu ay ödenenler
     const totalPaid = expenses.filter(e => e.status === 'Ödendi').reduce((acc, curr) => acc + curr.amount, 0);
 
     const getStatusColor = (status: RecurringExpense['status']) => {
@@ -109,6 +115,7 @@ export default function InvoicesPage() {
 
         try {
             const today = new Date().toISOString().split('T')[0];
+            const taxAmount = (expense.amount * (expense.taxRate || 0)) / (100 + (expense.taxRate || 0));
 
             // 1. Update Invoice Status
             const { error: updateError } = await supabase
@@ -121,7 +128,7 @@ export default function InvoicesPage() {
 
             if (updateError) throw updateError;
 
-            // 2. Create Expense Record
+            // 2. Create Expense Record (With Tax!)
             const { error: insertError } = await supabase
                 .from('expenses')
                 .insert([{
@@ -130,7 +137,9 @@ export default function InvoicesPage() {
                     category: expense.category,
                     date: today,
                     description: `${expense.name} (Fatura Ödemesi)`,
-                    payment_method: 'Nakit' // Default to Cash
+                    payment_method: 'Nakit',
+                    tax_rate: expense.taxRate || 0,
+                    tax_amount: taxAmount
                 }]);
 
             if (insertError) throw insertError;
@@ -165,7 +174,8 @@ export default function InvoicesPage() {
             amount: expense.amount.toString(),
             dayOfMonth: expense.dayOfMonth.toString(),
             category: expense.category,
-            autoPay: expense.autoPay
+            addTax: (expense.taxRate || 0) > 0,
+            taxRate: expense.taxRate || 20
         });
         setShowAddModal(true);
     };
@@ -175,6 +185,7 @@ export default function InvoicesPage() {
         try {
             const numericAmount = parseFloat(newExpense.amount);
             const numericDay = parseInt(newExpense.dayOfMonth);
+            const taxRate = newExpense.addTax ? Number(newExpense.taxRate) : 0;
 
             if (editingId) {
                 // Update
@@ -186,7 +197,7 @@ export default function InvoicesPage() {
                         amount: numericAmount,
                         day_of_month: numericDay,
                         category: newExpense.category,
-                        auto_pay: newExpense.autoPay
+                        tax_rate: taxRate // New
                     })
                     .eq('id', editingId)
                     .select();
@@ -202,7 +213,7 @@ export default function InvoicesPage() {
                         dayOfMonth: data[0].day_of_month,
                         category: data[0].category as any,
                         status: data[0].status as any,
-                        autoPay: data[0].auto_pay,
+                        taxRate: data[0].tax_rate || 0,
                         lastPaidDate: data[0].last_paid_date
                     };
                     setExpenses(expenses.map(e => e.id === editingId ? updated : e));
@@ -218,7 +229,7 @@ export default function InvoicesPage() {
                             amount: numericAmount,
                             day_of_month: numericDay,
                             category: newExpense.category,
-                            auto_pay: newExpense.autoPay,
+                            tax_rate: taxRate,
                             status: 'Bekliyor'
                         }
                     ])
@@ -235,7 +246,7 @@ export default function InvoicesPage() {
                         dayOfMonth: data[0].day_of_month,
                         category: data[0].category as any,
                         status: data[0].status as any,
-                        autoPay: data[0].auto_pay,
+                        taxRate: data[0].tax_rate || 0,
                         lastPaidDate: data[0].last_paid_date
                     };
                     setExpenses([...expenses, added]);
@@ -250,7 +261,8 @@ export default function InvoicesPage() {
                 amount: '',
                 dayOfMonth: '',
                 category: 'Diğer',
-                autoPay: false
+                addTax: false,
+                taxRate: 20
             });
         } catch (error) {
             console.error('Error saving recurring expense:', error);
@@ -258,7 +270,6 @@ export default function InvoicesPage() {
         }
     };
 
-    // Helper to edit date/amount input state
     const updateNewExpense = (field: string, value: any) => {
         setNewExpense(prev => ({ ...prev, [field]: value }));
     };
@@ -281,7 +292,8 @@ export default function InvoicesPage() {
                             amount: '',
                             dayOfMonth: '',
                             category: 'Diğer',
-                            autoPay: false
+                            addTax: false,
+                            taxRate: 20
                         });
                         setShowAddModal(true);
                     }}
@@ -341,7 +353,7 @@ export default function InvoicesPage() {
                         </div>
                     </div>
                     <div className="mt-4 text-xs text-muted-foreground">
-                        3 fatura ödeme bekliyor
+                        {expenses.filter(e => e.status !== 'Ödendi').length} fatura ödeme bekliyor
                     </div>
                 </div>
             </div>
@@ -388,14 +400,21 @@ export default function InvoicesPage() {
                             </div>
 
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-muted-foreground">Tutar (Tahmini)</span>
-                                <span className="font-bold text-lg">₺{expense.amount.toLocaleString()}</span>
+                                <span className="text-muted-foreground">Tutar (KDV Dahil)</span>
+                                <div className="text-right">
+                                    <span className="font-bold text-lg block">₺{expense.amount.toLocaleString()}</span>
+                                    {(expense.taxRate || 0) > 0 && (
+                                        <span className="text-[10px] text-green-600 font-medium">
+                                            KDV %{expense.taxRate} Dahil
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
                             <div className={`px-3 py-2 rounded-lg border text-sm flex items-center justify-between ${getStatusColor(expense.status)}`}>
                                 <span className="font-medium">{expense.status}</span>
                                 {expense.status === 'Ödendi' && <CheckCircle2 className="w-4 h-4" />}
-                                {expense.status === 'Yaklaşıyor' && <span className="text-xs opacity-75">3 gün kaldı</span>}
+                                {expense.status === 'Yaklaşıyor' && <span className="text-xs opacity-75">Yaklaşıyor</span>}
                             </div>
 
                             {expense.status !== 'Ödendi' ? (
@@ -499,18 +518,43 @@ export default function InvoicesPage() {
                                 </select>
                             </div>
 
-                            <div className="flex items-center gap-2 pt-2">
-                                <input
-                                    type="checkbox"
-                                    id="autoPay"
-                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                    checked={newExpense.autoPay}
-                                    onChange={(e) => updateNewExpense('autoPay', e.target.checked)}
-                                />
-                                <label htmlFor="autoPay" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">
-                                    Otomatik Ödeme Talimatı Var
-                                </label>
+                            {/* Tax Toggle */}
+                            <div className="space-y-3 pt-2 border-t border-border/10">
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        id="addTaxInvoice"
+                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        checked={newExpense.addTax}
+                                        onChange={(e) => updateNewExpense('addTax', e.target.checked)}
+                                    />
+                                    <label htmlFor="addTaxInvoice" className="text-sm font-medium leading-none cursor-pointer select-none">
+                                        KDV Dahil / Vergi İndirimi
+                                    </label>
+                                </div>
+
+                                {/* Tax Rate (Conditional) */}
+                                {newExpense.addTax && (
+                                    <div className="space-y-2 animate-in slide-in-from-top-2 p-3 bg-secondary/20 rounded-lg">
+                                        <label className="text-xs font-medium text-muted-foreground">KDV Oranı Seçiniz</label>
+                                        <div className="flex items-center gap-4">
+                                            {[1, 10, 20].map((rate) => (
+                                                <label key={rate} className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="taxRateInvoice"
+                                                        className="w-4 h-4 text-primary"
+                                                        checked={newExpense.taxRate === rate}
+                                                        onChange={() => updateNewExpense('taxRate', rate)}
+                                                    />
+                                                    <span className="text-sm">%{rate}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
+
 
                             <div className="flex justify-end gap-3 mt-6">
                                 <button

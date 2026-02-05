@@ -36,8 +36,10 @@ export const getNextTaxDeadlines = (): TaxDeadline[] => {
         }
 
         const kdvDate = new Date(kdvYear, kdvMonth, 28);
+        const prevMonthDate = new Date(kdvDate);
+        prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
         deadlines.push({
-            title: `${new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(kdvDate)} KDV Beyanı`,
+            title: `${new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(prevMonthDate)} KDV Beyanı`,
             date: kdvDate,
             type: 'KDV',
             description: 'Aylık KDV beyannamesi ve ödemesi',

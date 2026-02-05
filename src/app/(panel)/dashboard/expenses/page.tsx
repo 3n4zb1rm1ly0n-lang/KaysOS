@@ -461,6 +461,48 @@ export default function ExpensesPage() {
                                 />
                             </div>
 
+                            {/* Tax Toggle */}
+                            <div className="space-y-3 pt-2 border-t border-border/10">
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        id="addTaxExpense"
+                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        checked={newExpense.addTax}
+                                        onChange={(e) => setNewExpense({ ...newExpense, addTax: e.target.checked })}
+                                    />
+                                    <label htmlFor="addTaxExpense" className="text-sm font-medium leading-none cursor-pointer select-none">
+                                        KDV Dahil / Vergi İndirimi
+                                    </label>
+                                </div>
+
+                                {/* Tax Rate (Conditional) */}
+                                {newExpense.addTax && (
+                                    <div className="space-y-2 animate-in slide-in-from-top-2 p-3 bg-secondary/20 rounded-lg">
+                                        <label className="text-xs font-medium text-muted-foreground">KDV Oranı Seçiniz</label>
+                                        <div className="flex items-center gap-4">
+                                            {[1, 10, 20].map((rate) => (
+                                                <label key={rate} className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="taxRateExpense"
+                                                        className="w-4 h-4 text-primary"
+                                                        checked={newExpense.taxRate === rate}
+                                                        onChange={() => setNewExpense({ ...newExpense, taxRate: rate })}
+                                                    />
+                                                    <span className="text-sm">%{rate}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <div className="text-right text-xs text-muted-foreground pt-1">
+                                            Bu işlemden düşülecek KDV: <span className="font-mono font-bold text-foreground">
+                                                ₺{((parseFloat(newExpense.amount || '0') * (newExpense.taxRate || 20)) / (100 + (newExpense.taxRate || 20))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"

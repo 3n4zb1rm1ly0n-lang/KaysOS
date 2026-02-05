@@ -20,64 +20,85 @@ export const getNextTaxDeadlines = (): TaxDeadline[] => {
     const deadlines: TaxDeadline[] = [];
 
     // --- 1. KDV (Her ayın 28'i) ---
-    // If today is past 28th, next deadline is next month's 28th.
-    let kdvMonth = currentMonth;
-    let kdvYear = currentYear;
+    // Sadece önümüzdeki 2 ayı gösterelim ki liste dolmasın
+    for (let i = 0; i < 2; i++) {
+        let kdvMonth = currentMonth + i;
+        let kdvYear = currentYear;
 
-    if (now.getDate() > 28) {
-        kdvMonth = currentMonth + 1;
+        // Eğer ay 28'ini geçtiyse bir sonraki aydan başla (i=0 için)
+        if (i === 0 && now.getDate() > 28) {
+            kdvMonth++;
+        }
+
         if (kdvMonth > 11) {
-            kdvMonth = 0;
+            kdvMonth -= 12;
             kdvYear++;
         }
+
+        const kdvDate = new Date(kdvYear, kdvMonth, 28);
+        deadlines.push({
+            title: `${new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(kdvDate)} KDV Beyanı`,
+            date: kdvDate,
+            type: 'KDV',
+            description: 'Aylık KDV beyannamesi ve ödemesi',
+            remainingDays: Math.ceil((kdvDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        });
     }
 
-    // Aslında bir sonraki ayın 28'i, bir önceki ayın beyanıdır.
-    // Basitlik için "Sıradaki KDV Ödemesi" olarak set ediyoruz.
-    const kdvDate = new Date(kdvYear, kdvMonth, 28);
-    deadlines.push({
-        title: `${new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(kdvDate)} KDV Beyanı`,
-        date: kdvDate,
-        type: 'KDV',
-        description: 'Aylık KDV beyannamesi ve ödemesi',
-        remainingDays: Math.ceil((kdvDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    });
 
-    // --- 2. Geçici Vergi (17 Mayıs, 17 Ağustos, 17 Kasım) ---
+    // --- 2. Geçici Vergi (17 Mayıs, 17 Ağustos, 17 Kasım, 17 Şubat) ---
+    // Tüm yılın kalanlarını ekle
     const provisionalDates = [
-        new Date(currentYear, 4, 17), // 17 Mayıs (1. Dönem)
-        new Date(currentYear, 7, 17), // 17 Ağustos (2. Dönem)
-        new Date(currentYear, 10, 17), // 17 Kasım (3. Dönem)
-        new Date(currentYear + 1, 1, 17) // 17 Şubat (4. Dönem - Bazen Mart)
+        { date: new Date(currentYear, 4, 17), term: '1. Dönem' }, // 17 Mayıs
+        { date: new Date(currentYear, 7, 17), term: '2. Dönem' }, // 17 Ağustos
+        { date: new Date(currentYear, 10, 17), term: '3. Dönem' }, // 17 Kasım
+        { date: new Date(currentYear + 1, 1, 17), term: '4. Dönem' } // 17 Şubat (Sonraki Yıl)
     ];
 
-    const nextProvisional = provisionalDates.find(d => d > now) || provisionalDates[0]; // Döngüsel basit mantık
-
-    // Eğer yıl bittiyse ve şubat'ı kaçırdıysak sonraki yıla atar (basit tutuyoruz)
-    if (nextProvisional < now) {
-        nextProvisional.setFullYear(currentYear + 1);
-    }
-
-    deadlines.push({
-        title: 'Geçici Vergi Dönemi',
-        date: nextProvisional,
-        type: 'Geçici',
-        description: '3 aylık kazanç üzerinden peşin vergi',
-        remainingDays: Math.ceil((nextProvisional.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    provisionalDates.forEach(p => {
+        if (p.date > now) {
+            deadlines.push({
+                title: `Geçici Vergi (${p.term})`,
+                date: p.date,
+                type: 'Geçici',
+                description: '3 aylık kazanç üzerinden peşin vergi',
+                remainingDays: Math.ceil((p.date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            });
+        }
     });
 
-    // --- 3. Yıllık Gelir Vergisi (Mart Sonu) ---
-    const annualDate = new Date(currentYear, 2, 31); // 31 Mart
-    if (now > annualDate) {
-        annualDate.setFullYear(currentYear + 1);
-    }
+    // --- 3. Yıllık Gelir Vergisi (Mart ve Temmuz) ---
+    const annualInstallments = [
+        { date: new Date(currentYear, 2, 31), title: 'Yıllık Gelir Vergisi (1. Taksit)' },
+        { date: new Date(currentYear, 6, 31), title: 'Yıllık Gelir Vergisi (2. Taksit)' }
+    ];
 
-    deadlines.push({
-        title: 'Yıllık Gelir Vergisi (1. Taksit)',
-        date: annualDate,
-        type: 'Yıllık',
-        description: 'Yıllık kazanç vergisi beyanı ve ilk taksit',
-        remainingDays: Math.ceil((annualDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    annualInstallments.forEach(inst => {
+        if (inst.date > now) {
+            deadlines.push({
+                title: inst.title,
+                date: inst.date,
+                type: 'Yıllık',
+                description: 'Yıllık kazanç vergisi taksiti',
+                remainingDays: Math.ceil((inst.date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            });
+        } else {
+            // Eğer bu yılın tarihi geçtiyse, seneye ekle (Opsiyonel, şimdilik sadece bu yılı gösterelim kafa karışmasın)
+            // Yıllık döngüde Mart'ı kaçırdıysak seneye Mart'ı gösteriyoruz genelde ama burada "Bu Yılki Ödemeler" odağı var.
+            // Kullanıcı "Seneye Mart"ı şimdi görmek istemeyebilir, ama Temmuz'u görmek ister.
+            // Eğer ikisi de geçtiyse (örneğin Aralık ayındayız), seneye Mart'ı gösterelim.
+            if (currentMonth > 6) { // Temmuz bittiyse
+                const nextYearDate = new Date(inst.date);
+                nextYearDate.setFullYear(currentYear + 1);
+                deadlines.push({
+                    title: inst.title,
+                    date: nextYearDate,
+                    type: 'Yıllık',
+                    description: 'Yıllık kazanç vergisi taksiti',
+                    remainingDays: Math.ceil((nextYearDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                });
+            }
+        }
     });
 
     // Sort by nearest

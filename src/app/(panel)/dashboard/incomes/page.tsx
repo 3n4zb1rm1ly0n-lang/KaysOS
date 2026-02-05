@@ -16,6 +16,7 @@ interface Income {
     isRecurring?: boolean;
     taxRate?: number;
     taxAmount?: number;
+    invoiceDate?: string;
 }
 
 export default function IncomesPage() {
@@ -29,13 +30,13 @@ export default function IncomesPage() {
         source: '',
         category: '',
         date: new Date().toISOString().split('T')[0],
+        invoiceDate: '', // New Field
         description: '',
         isRecurring: false,
         addTax: false,
         taxRate: 20
     });
 
-    // Verileri çek
     // Verileri çek
     useEffect(() => {
         fetchIncomes();
@@ -77,7 +78,8 @@ export default function IncomesPage() {
                     status: item.status as 'Gelir' | 'Bekleyen',
                     isRecurring: item.is_recurring,
                     taxRate: item.tax_rate,
-                    taxAmount: item.tax_amount
+                    taxAmount: item.tax_amount,
+                    invoiceDate: item.invoice_date // Load from DB
                 }));
                 setIncomes(formattedData);
             }
@@ -102,6 +104,8 @@ export default function IncomesPage() {
                 taxAmount = (numericAmount * taxRate) / (100 + taxRate);
             }
 
+            const invoiceDateToSave = newIncome.addTax && newIncome.invoiceDate ? newIncome.invoiceDate : newIncome.date;
+
             if (editingId) {
                 // Update
                 const { data, error } = await supabase
@@ -111,6 +115,7 @@ export default function IncomesPage() {
                         source: newIncome.source,
                         category: newIncome.category,
                         date: newIncome.date,
+                        invoice_date: invoiceDateToSave,
                         description: newIncome.description,
                         is_recurring: newIncome.isRecurring,
                         tax_rate: taxRate,
@@ -131,6 +136,7 @@ export default function IncomesPage() {
                             source: newIncome.source,
                             category: newIncome.category,
                             date: newIncome.date,
+                            invoice_date: invoiceDateToSave,
                             description: newIncome.description,
                             status: 'Gelir',
                             is_recurring: newIncome.isRecurring,
@@ -147,7 +153,7 @@ export default function IncomesPage() {
             setShowAddModal(false);
             setEditingId(null);
             setNewIncome({
-                amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0],
+                amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], invoiceDate: '',
                 description: '', isRecurring: false, addTax: false, taxRate: 20
             });
         } catch (error) {
@@ -188,7 +194,8 @@ export default function IncomesPage() {
             description: income.description,
             isRecurring: income.isRecurring || false,
             addTax: (income.taxRate || 0) > 0,
-            taxRate: income.taxRate || 20
+            taxRate: income.taxRate || 20,
+            invoiceDate: income.invoiceDate || income.date // Load existing or fallback
         });
         setShowAddModal(true);
     };
@@ -219,7 +226,7 @@ export default function IncomesPage() {
                 <button
                     onClick={() => {
                         setEditingId(null);
-                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], description: '', isRecurring: false, addTax: false, taxRate: 20 });
+                        setNewIncome({ amount: '', source: '', category: '', date: new Date().toISOString().split('T')[0], invoiceDate: '', description: '', isRecurring: false, addTax: false, taxRate: 20 });
                         setShowAddModal(true);
                     }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
@@ -393,18 +400,32 @@ export default function IncomesPage() {
                                 </div>
 
                                 {newIncome.addTax && (
-                                    <div className="space-y-2 animate-in slide-in-from-top-2">
-                                        <label className="text-sm font-medium text-muted-foreground">KDV Oranı</label>
-                                        <select
-                                            className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                            value={newIncome.taxRate}
-                                            onChange={(e) => setNewIncome({ ...newIncome, taxRate: Number(e.target.value) })}
-                                        >
-                                            <option value={1}>%1</option>
-                                            <option value={10}>%10</option>
-                                            <option value={20}>%20</option>
-                                        </select>
-                                        <div className="text-xs text-muted-foreground text-right">
+                                    <div className="space-y-2 animate-in slide-in-from-top-2 p-3 bg-secondary/20 rounded-lg">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-muted-foreground">KDV Oranı</label>
+                                                <select
+                                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                                    value={newIncome.taxRate}
+                                                    onChange={(e) => setNewIncome({ ...newIncome, taxRate: Number(e.target.value) })}
+                                                >
+                                                    <option value={1}>%1</option>
+                                                    <option value={10}>%10</option>
+                                                    <option value={20}>%20</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-muted-foreground">Fatura Tarihi</label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
+                                                    value={newIncome.invoiceDate || newIncome.date} // Default to date if empty
+                                                    onChange={(e) => setNewIncome({ ...newIncome, invoiceDate: e.target.value })}
+                                                />
+                                                <p className="text-[10px] text-muted-foreground">Boş bırakılırsa tahsilat tarihi kullanılır.</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground text-right pt-2 border-t border-border/10">
                                             Tahmini Vergi: ₺{((parseFloat(newIncome.amount || '0') * newIncome.taxRate) / (100 + newIncome.taxRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                         </div>
                                     </div>

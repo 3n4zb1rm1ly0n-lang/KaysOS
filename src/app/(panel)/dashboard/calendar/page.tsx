@@ -165,21 +165,12 @@ export default function CalendarPage() {
             const isProvisionalMonth = [1, 4, 7, 10].includes(month); // Feb, May, Aug, Nov
 
             if (isProvisionalMonth) {
+                // ... (Previous logic for provisional tax remains) ...
                 // Calculate simple estimate for the relevant quarter
                 // If May (4), Q1 (Jan-Mar)
                 // If Aug (7), Q2 (Apr-Jun)
                 // If Nov (10), Q3 (Jul-Sep)
                 // If Feb (1), Q4 (Oct-Dec)
-
-                let qStart = new Date(currentDate.getFullYear(), month - 4, 1); // rough approx
-                if (month === 1) qStart = new Date(currentDate.getFullYear() - 1, 9, 1); // Oct prev year
-                else qStart = new Date(currentDate.getFullYear(), month - 4, 1); // Jan, Apr, Jul
-
-                // Actually simpler: 
-                // May(4) -> Jan(0) - Mar(2)
-                // Aug(7) -> Apr(3) - Jun(5)
-                // Nov(10) -> Jul(6) - Sep(8)
-                // Feb(1) -> Oct(9) - Dec(11) (Prev Year) (Often declared Mar 1 annual, but let's keep simple)
 
                 let qStartStr = '';
                 let qEndStr = '';
@@ -220,6 +211,44 @@ export default function CalendarPage() {
                             type: 'tax'
                         });
                     }
+                }
+            }
+
+            // 7. Yıllık Gelir Vergisi (Mart ve Temmuz)
+            // Mart: İlk Taksit
+            // Temmuz: İkinci Taksit
+            if (month === 2 || month === 6) { // 2=March, 6=July
+                // Yıllık gelir vergisi genellikle bir önceki tam yılın kârı üzerinden hesaplanır.
+                const prevYear = currentDate.getFullYear() - (month === 2 ? 1 : 0); // Warning: For July, it's same year payment for prev year tax usually? actually both installments are for prev year.
+                // Correct logic: Both March 2026 and July 2026 payments are for 2025 earnings.
+                const taxYear = currentDate.getFullYear() - 1;
+
+                const startOfYearDate = format(new Date(taxYear, 0, 1), 'yyyy-MM-dd');
+                const endOfYearDate = format(new Date(taxYear, 11, 31), 'yyyy-MM-dd');
+
+                const [yInc, yExp] = await Promise.all([
+                    supabase.from('incomes').select('amount, tax_amount').gte('date', startOfYearDate).lte('date', endOfYearDate),
+                    supabase.from('expenses').select('amount, tax_amount').gte('date', startOfYearDate).lte('date', endOfYearDate)
+                ]);
+
+                const yIncomeTotal = yInc.data?.reduce((acc, curr) => acc + (curr.amount - (curr.tax_amount || 0)), 0) || 0;
+                const yExpenseTotal = yExp.data?.reduce((acc, curr) => acc + (curr.amount - (curr.tax_amount || 0)), 0) || 0;
+                // Ayrıca "Manual Deductions" (Vergi Takibi tablosu) da düşülmeli:
+                // const [yDeduct] = await supabase.from('tax_entries').select('amount').gte('date', startOfYearDate).lte('date', endOfYearDate);
+                // For now, keep simple.
+
+                const annualProfit = yIncomeTotal - yExpenseTotal;
+                if (annualProfit > 0) {
+                    const annualTax = calculateEstimatedIncomeTax(yIncomeTotal, yExpenseTotal); // Total tax for the year
+                    const installmentAmount = annualTax.tax / 2;
+
+                    newEvents.push({
+                        id: `annual-tax-${month}-${format(currentDate, 'yyyy')}`,
+                        date: format(setDate(currentDate, 31), 'yyyy-MM-dd'), // Approximate end of month
+                        title: `Yıllık Gelir Vergisi (${month === 2 ? '1. Taksit' : '2. Taksit'})`,
+                        amount: `~₺${installmentAmount.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
+                        type: 'tax'
+                    });
                 }
             }
 

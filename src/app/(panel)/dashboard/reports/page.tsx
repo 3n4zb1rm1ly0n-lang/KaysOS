@@ -19,7 +19,7 @@ import { getNextTaxDeadlines, calculateEstimatedIncomeTax } from '@/lib/tax-util
 interface TaxRecord {
     id: string;
     date: string;
-    type: 'Gelir' | 'Gider';
+    type: 'Gelir' | 'Gider' | 'Manuel İndirim';
     description: string;
     totalAmount: number;
     taxRate: number;
@@ -60,6 +60,12 @@ export default function AccountingPage() {
                 .gt('tax_amount', 0)
                 .order('date', { ascending: false });
 
+            // Fetch Manual Tax Deductions
+            const { data: manualData } = await supabase
+                .from('tax_entries')
+                .select('*')
+                .order('date', { ascending: false });
+
             let allRecords: TaxRecord[] = [];
 
             if (incomeData) {
@@ -90,6 +96,22 @@ export default function AccountingPage() {
                 allRecords = [...allRecords, ...expenses];
             }
 
+            if (manualData) {
+                const manuals: TaxRecord[] = manualData.map(item => ({
+                    id: item.id,
+                    date: item.date,
+                    type: 'Manuel İndirim' as const, // Type casting trick if needed, or just string
+                    description: `${item.description} (Manuel Fiş)`,
+                    totalAmount: 0, // 0 For cash flow, but we track it conceptually
+                    taxRate: item.tax_rate,
+                    taxAmount: item.tax_amount, // This is the important part
+                    netAmount: 0
+                }));
+                // We treat manual deductions as "Expenses" for tax purposes, so they reduce tax liability.
+                // However, they are not "real" expenses for profit calculation (user instruction).
+                allRecords = [...allRecords, ...manuals];
+            }
+
             // Sort by Date Descending
             allRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -104,12 +126,16 @@ export default function AccountingPage() {
 
     // Summary Calculations
     const totalIncomeTax = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + curr.taxAmount, 0);
-    const totalExpenseTax = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + curr.taxAmount, 0);
+    // Include both real Expenses and Manual Deductions in the "Deductible Tax" total
+    const totalExpenseTax = records.filter(r => r.type === 'Gider' || r.type === 'Manuel İndirim').reduce((acc, curr) => acc + curr.taxAmount, 0);
+
     const netTaxPosition = totalIncomeTax - totalExpenseTax;
 
     // Profit & Income Tax Estimation (Simple)
+    // EXCLUDE 'Manuel İndirim' from these totals as per user request (no effect on money flow)
     const totalIncome = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
     const totalExpense = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
+
     const estimatedIncomeTax = calculateEstimatedIncomeTax(totalIncome, totalExpense);
 
     const calculateQuickTax = () => {

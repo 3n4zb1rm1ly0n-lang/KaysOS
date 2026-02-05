@@ -91,12 +91,12 @@ export const calculateEstimatedIncomeTax = (
     const profit = totalIncome - totalExpense;
     if (profit <= 0) return { tax: 0, effectiveRate: 0, bracket: 0 };
 
-    // 2025 Tahmini Gelir Vergisi Dilimleri (Şahıs)
+    // 2025 Gelir Vergisi Dilimleri (Ücret Dışı Gelirler İçin)
     const brackets = [
         { limit: 158000, rate: 0.15 },
         { limit: 330000, rate: 0.20 },
-        { limit: 800000, rate: 0.27 },
-        { limit: 3000000, rate: 0.35 },
+        { limit: 800000, rate: 0.27 }, // Güncellendi
+        { limit: 4300000, rate: 0.35 }, // Güncellendi
         { limit: Infinity, rate: 0.40 }
     ];
 

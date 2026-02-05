@@ -14,7 +14,8 @@ import {
     Calendar,
     Receipt,
     GripVertical,
-    Wallet
+    Wallet,
+    FileText
 } from 'lucide-react';
 import {
     DndContext,
@@ -47,9 +48,10 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     { id: '3', label: 'Borçlar', href: '/dashboard/debts', icon: CreditCard },
     { id: '4', label: 'Faturalar', href: '/dashboard/invoices', icon: Receipt },
     { id: '5', label: 'Gider', href: '/dashboard/expenses', icon: TrendingDown },
-    { id: '6', label: 'Muhasebe', href: '/dashboard/reports', icon: Calculator },
-    { id: '7', label: 'Takvim', href: '/dashboard/calendar', icon: Calendar },
-    { id: '8', label: 'Birikim', href: '/dashboard/savings', icon: Wallet },
+    { id: '6', label: 'Vergi Takibi', href: '/dashboard/taxes', icon: Calculator },
+    { id: '7', label: 'Muhasebe', href: '/dashboard/reports', icon: FileText },
+    { id: '8', label: 'Takvim', href: '/dashboard/calendar', icon: Calendar },
+    { id: '9', label: 'Birikim', href: '/dashboard/savings', icon: Wallet },
 ];
 
 function SortableMenuItem({ item }: { item: MenuItem }) {

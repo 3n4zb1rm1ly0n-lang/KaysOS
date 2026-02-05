@@ -284,6 +284,79 @@ export default function AccountingPage() {
                 </div>
             </div>
 
+            {/* Monthly Charts */}
+            <div className="grid gap-6 md:grid-cols-3">
+                {[-1, 0, 1].map((offset) => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() + offset);
+                    const monthName = d.toLocaleString('tr-TR', { month: 'long', year: 'numeric' });
+                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+                    const monthlyRecords = records.filter(r => r.date.startsWith(monthKey));
+                    const monthlyIncomeTax = monthlyRecords
+                        .filter(r => r.type === 'Gelir' || r.type === 'Manuel Gelir')
+                        .reduce((acc, curr) => acc + curr.taxAmount, 0);
+                    const monthlyExpenseTax = monthlyRecords
+                        .filter(r => r.type === 'Gider' || r.type === 'Manuel İndirim')
+                        .reduce((acc, curr) => acc + curr.taxAmount, 0);
+                    const monthlyNet = monthlyIncomeTax - monthlyExpenseTax;
+                    const maxVal = Math.max(monthlyIncomeTax, monthlyExpenseTax, 1); // Avoid div by 0
+
+                    let label = "Bu Ay";
+                    if (offset === -1) label = "Geçen Ay";
+                    if (offset === 1) label = "Gelecek Ay";
+
+                    return (
+                        <div key={offset} className="p-5 rounded-xl border bg-card/50 shadow-sm flex flex-col gap-4">
+                            <div className="flex justify-between items-center border-b pb-2">
+                                <span className="font-semibold text-sm">{label} <span className="text-muted-foreground text-xs font-normal">({monthName})</span></span>
+                                <span className={`text-xs font-bold px-2 py-1 rounded-full ${monthlyNet > 0 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                    {monthlyNet > 0 ? 'Ödenecek' : 'Devreden'}
+                                </span>
+                            </div>
+
+                            <div className="space-y-4">
+                                {/* Income Bar */}
+                                <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="text-muted-foreground">Hesaplanan (Gelir)</span>
+                                        <span className="font-mono font-medium text-green-600">₺{monthlyIncomeTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-green-500 rounded-full transition-all"
+                                            style={{ width: `${(monthlyIncomeTax / maxVal) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Expense Bar */}
+                                <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="text-muted-foreground">İndirilecek (Gider)</span>
+                                        <span className="font-mono font-medium text-red-600">₺{monthlyExpenseTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-red-500 rounded-full transition-all"
+                                            style={{ width: `${(monthlyExpenseTax / maxVal) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Result */}
+                                <div className="pt-2 border-t flex justify-between items-center">
+                                    <span className="text-xs font-medium">Net Durum:</span>
+                                    <span className={`text-lg font-bold font-mono ${monthlyNet > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                                        ₺{Math.abs(monthlyNet).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
             {/* Annual Summary */}
             <div className="space-y-4">
                 <h3 className="font-semibold flex items-center gap-2">
@@ -531,16 +604,28 @@ export default function AccountingPage() {
                                 : "Bu alandan eklediğiniz fişler kasanızdan para çıkışı olarak görünmez, sadece vergi hesaplamasında 'İndirilecek KDV' olarak kullanılır."}
                         </p>
                         <form onSubmit={handleAdd} className="space-y-4">
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder={entryType === 'income' ? "Örn: Danışmanlık Faturası" : "Örn: Yemek Fişi"}
-                                    value={newEntry.description}
-                                    onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder={entryType === 'income' ? "Örn: Danışmanlık Faturası" : "Örn: Yemek Fişi"}
+                                        value={newEntry.description}
+                                        onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Tarih</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none block"
+                                        value={newEntry.date}
+                                        onChange={(e) => setNewEntry({ ...newEntry, date: e.target.value })}
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

@@ -107,10 +107,10 @@ export default function AccountingPage() {
                         date: item.date,
                         type: isIncome ? 'Manuel Gelir' : 'Manuel İndirim',
                         description: `${item.description} (Manuel)`,
-                        totalAmount: 0, // 0 For cash flow
+                        totalAmount: item.amount,
                         taxRate: item.tax_rate,
                         taxAmount: item.tax_amount,
-                        netAmount: 0
+                        netAmount: item.amount - item.tax_amount
                     };
                 });
                 allRecords = [...allRecords, ...manuals];
@@ -135,10 +135,9 @@ export default function AccountingPage() {
 
     const netTaxPosition = totalIncomeTax - totalExpenseTax;
 
-    // Profit & Income Tax Estimation (Simple)
-    // EXCLUDE 'Manuel İndirim' AND 'Manuel Gelir' from these totals as per user request (no effect on money flow)
-    const totalIncome = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
-    const totalExpense = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
+    // Profit & Income Tax Estimation (Updated: Now INCLUDES Manual Entries as requested)
+    const totalIncome = records.filter(r => r.type === 'Gelir' || r.type === 'Manuel Gelir').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
+    const totalExpense = records.filter(r => r.type === 'Gider' || r.type === 'Manuel İndirim').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
 
     const estimatedIncomeTax = calculateEstimatedIncomeTax(totalIncome, totalExpense);
 

@@ -99,14 +99,37 @@ export default function DashboardPage() {
     const totalExpense = expenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
     const netResult = totalIncome - totalExpense;
 
-    const avgTransaction = incomes.length > 0 ? totalIncome / incomes.length : 0;
+    // Cash Flow Calculations (Nakit Akışı)
+    // Gelir: Sadece "Gelir" statüsünde olanlar VE tarihi bugün veya geçmişte olanlar (Gelecek tarihli "Gelir" olmaz ama kontrol etmekte fayda var)
+    // Gider: Tarihi bugün veya geçmişte olanlar
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Include end of today
 
-    // Simple dynamic KPI
+    const realizedIncome = incomes
+        .filter(i => i.status === 'Gelir' && new Date(i.date) <= today)
+        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+    const realizedExpense = expenses
+        .filter(e => new Date(e.date) <= today)
+        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+    const netCash = realizedIncome - realizedExpense;
+
+    const pendingIncome = incomes
+        .filter(i => i.status === 'Bekleyen' || new Date(i.date) > today)
+        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
     const kpiCards = [
         {
-            title: 'Toplam Gelir',
+            title: 'Toplam Ciro (Gelecek Dahil)',
             value: `₺${totalIncome.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
-            change: '-',
+            change: 'Genel',
+            trend: 'neutral'
+        },
+        {
+            title: 'Bekleyen / Gelecek Tahsilat',
+            value: `₺${pendingIncome.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: 'Alacaklar',
             trend: 'neutral'
         },
         {
@@ -116,16 +139,10 @@ export default function DashboardPage() {
             trend: 'neutral'
         },
         {
-            title: 'Net Durum',
-            value: `₺${netResult.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
-            change: '-',
-            trend: netResult >= 0 ? 'up' : 'down'
-        },
-        {
-            title: 'Ortalama İşlem',
-            value: `₺${avgTransaction.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
-            change: '-',
-            trend: 'neutral'
+            title: 'ANLIK KASA (Nakit)',
+            value: `₺${netCash.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`,
+            change: 'Cepteki Para',
+            trend: netCash >= 0 ? 'up' : 'down'
         },
     ];
 

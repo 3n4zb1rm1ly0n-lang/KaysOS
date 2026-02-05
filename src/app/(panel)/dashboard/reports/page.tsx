@@ -20,7 +20,7 @@ import { getNextTaxDeadlines, calculateEstimatedIncomeTax } from '@/lib/tax-util
 interface TaxRecord {
     id: string;
     date: string;
-    type: 'Gelir' | 'Gider' | 'Manuel İndirim';
+    type: 'Gelir' | 'Gider' | 'Manuel İndirim' | 'Manuel Gelir';
     description: string;
     totalAmount: number;
     taxRate: number;
@@ -61,7 +61,8 @@ export default function AccountingPage() {
                 .gt('tax_amount', 0)
                 .order('date', { ascending: false });
 
-            // Fetch Manual Tax Deductions
+            // Fetch Manual Tax Entries
+            // Note: entry_type column should aid in distinguishing. 
             const { data: manualData } = await supabase
                 .from('tax_entries')
                 .select('*')
@@ -98,18 +99,20 @@ export default function AccountingPage() {
             }
 
             if (manualData) {
-                const manuals: TaxRecord[] = manualData.map(item => ({
-                    id: item.id,
-                    date: item.date,
-                    type: 'Manuel İndirim' as const, // Type casting trick if needed, or just string
-                    description: `${item.description} (Manuel Fiş)`,
-                    totalAmount: 0, // 0 For cash flow, but we track it conceptually
-                    taxRate: item.tax_rate,
-                    taxAmount: item.tax_amount, // This is the important part
-                    netAmount: 0
-                }));
-                // We treat manual deductions as "Expenses" for tax purposes, so they reduce tax liability.
-                // However, they are not "real" expenses for profit calculation (user instruction).
+                const manuals: TaxRecord[] = manualData.map(item => {
+                    // Fallback to 'expense' if entry_type is missing (backward compatibility)
+                    const isIncome = item.entry_type === 'income';
+                    return {
+                        id: item.id,
+                        date: item.date,
+                        type: isIncome ? 'Manuel Gelir' : 'Manuel İndirim',
+                        description: `${item.description} (Manuel)`,
+                        totalAmount: 0, // 0 For cash flow
+                        taxRate: item.tax_rate,
+                        taxAmount: item.tax_amount,
+                        netAmount: 0
+                    };
+                });
                 allRecords = [...allRecords, ...manuals];
             }
 
@@ -126,14 +129,14 @@ export default function AccountingPage() {
     };
 
     // Summary Calculations
-    const totalIncomeTax = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + curr.taxAmount, 0);
+    const totalIncomeTax = records.filter(r => r.type === 'Gelir' || r.type === 'Manuel Gelir').reduce((acc, curr) => acc + curr.taxAmount, 0);
     // Include both real Expenses and Manual Deductions in the "Deductible Tax" total
     const totalExpenseTax = records.filter(r => r.type === 'Gider' || r.type === 'Manuel İndirim').reduce((acc, curr) => acc + curr.taxAmount, 0);
 
     const netTaxPosition = totalIncomeTax - totalExpenseTax;
 
     // Profit & Income Tax Estimation (Simple)
-    // EXCLUDE 'Manuel İndirim' from these totals as per user request (no effect on money flow)
+    // EXCLUDE 'Manuel İndirim' AND 'Manuel Gelir' from these totals as per user request (no effect on money flow)
     const totalIncome = records.filter(r => r.type === 'Gelir').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
     const totalExpense = records.filter(r => r.type === 'Gider').reduce((acc, curr) => acc + (curr.netAmount || (curr.totalAmount - curr.taxAmount)), 0);
 
@@ -154,6 +157,7 @@ export default function AccountingPage() {
 
     // Manual Entry State
     const [showAddModal, setShowAddModal] = useState(false);
+    const [entryType, setEntryType] = useState<'expense' | 'income'>('expense'); // New state
     const [newEntry, setNewEntry] = useState({
         description: '',
         amount: '',
@@ -163,9 +167,9 @@ export default function AccountingPage() {
     });
 
     const handleDelete = async (id: string, type: string) => {
-        if (type !== 'Manuel İndirim') return; // Sadece manuel fişler silinebilir
+        if (!type.includes('Manuel')) return; // Allow deleting both manual types
 
-        if (!confirm('Bu manuel fişi silmek istediğinize emin misiniz?')) return;
+        if (!confirm('Bu manuel kaydı silmek istediğinize emin misiniz?')) return;
 
         try {
             const { error } = await supabase.from('tax_entries').delete().eq('id', id);
@@ -190,7 +194,8 @@ export default function AccountingPage() {
                 tax_rate: rate,
                 tax_amount: taxAmount,
                 date: newEntry.date,
-                category: newEntry.category
+                category: newEntry.category,
+                entry_type: entryType // Insert the type
             }]);
 
             if (error) throw error;
@@ -206,7 +211,7 @@ export default function AccountingPage() {
             });
         } catch (error) {
             console.error('Error adding tax entry:', error);
-            alert('Hata oluştu.');
+            alert('Hata oluştur. (Veritabanı güncellemesi yapıldı mı?)');
         }
     };
 
@@ -227,13 +232,22 @@ export default function AccountingPage() {
                         Otomatik hesaplanan KDV raporlarınız. (Veriler Gelir ve Giderlerden çekilir)
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowAddModal(true)}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
-                >
-                    <FileText className="w-5 h-5" />
-                    Manuel Fiş Ekle
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => { setEntryType('expense'); setShowAddModal(true); }}
+                        className="bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors text-sm"
+                    >
+                        <FileText className="w-4 h-4" />
+                        Manuel Gider Fişi
+                    </button>
+                    <button
+                        onClick={() => { setEntryType('income'); setShowAddModal(true); }}
+                        className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors text-sm"
+                    >
+                        <FileText className="w-4 h-4" />
+                        Manuel Gelir Faturası
+                    </button>
+                </div>
             </div>
 
             {/* Tax Summary Cards */}
@@ -281,7 +295,7 @@ export default function AccountingPage() {
                         <h3 className="text-xs font-medium text-muted-foreground">Yıllık Hesaplanan KDV</h3>
                         <div className="mt-1 text-2xl font-bold text-foreground">
                             ₺{records
-                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gelir' || r.type === 'Manuel Gelir'))
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0)
                                 .toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                         </div>
@@ -298,14 +312,14 @@ export default function AccountingPage() {
                     <div className="p-4 rounded-xl bg-card border border-border shadow-sm">
                         <h3 className="text-xs font-medium text-muted-foreground">Yıllık Net KDV Dengesi</h3>
                         <div className={`mt-1 text-2xl font-bold ${(records
-                            .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                            .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gelir' || r.type === 'Manuel Gelir'))
                             .reduce((acc, curr) => acc + curr.taxAmount, 0) -
                             records
                                 .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gider' || r.type === 'Manuel İndirim'))
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0)) > 0 ? 'text-orange-600' : 'text-green-600'
                             }`}>
                             ₺{Math.abs(records
-                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gelir' || r.type === 'Manuel Gelir'))
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0) -
                                 records
                                     .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gider' || r.type === 'Manuel İndirim'))
@@ -469,9 +483,11 @@ export default function AccountingPage() {
                                             <td className="px-4 py-3">
                                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.type === 'Gelir'
                                                     ? 'bg-green-500/10 text-green-500'
-                                                    : record.type === 'Manuel İndirim'
-                                                        ? 'bg-blue-500/10 text-blue-500'
-                                                        : 'bg-red-500/10 text-red-500'
+                                                    : record.type === 'Manuel Gelir'
+                                                        ? 'bg-green-500/10 text-green-500 border border-green-200'
+                                                        : record.type === 'Manuel İndirim'
+                                                            ? 'bg-blue-500/10 text-blue-500'
+                                                            : 'bg-red-500/10 text-red-500'
                                                     }`}>
                                                     {record.type}
                                                 </span>
@@ -483,7 +499,7 @@ export default function AccountingPage() {
                                                 ₺{record.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                {record.type === 'Manuel İndirim' && (
+                                                {(record.type === 'Manuel İndirim' || record.type === 'Manuel Gelir') && (
                                                     <button
                                                         onClick={() => handleDelete(record.id, record.type)}
                                                         className="p-1 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 rounded transition-colors"
@@ -506,9 +522,13 @@ export default function AccountingPage() {
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold mb-4">Manuel Fiş Ekle</h3>
+                        <h3 className="text-xl font-bold mb-4">
+                            {entryType === 'income' ? 'Manuel Gelir Faturası Ekle' : 'Manuel Gider Fişi Ekle'}
+                        </h3>
                         <p className="text-sm text-muted-foreground mb-4">
-                            Bu alandan eklediğiniz fişler kasanızdan para çıkışı olarak görünmez, sadece vergi hesaplamasında 'İndirilecek KDV' olarak kullanılır.
+                            {entryType === 'income'
+                                ? "Bu alandan eklediğiniz gelirler kasanıza para girişi olarak görünmez, sadece vergi hesaplamasında 'Hesaplanan KDV' olarak kullanılır."
+                                : "Bu alandan eklediğiniz fişler kasanızdan para çıkışı olarak görünmez, sadece vergi hesaplamasında 'İndirilecek KDV' olarak kullanılır."}
                         </p>
                         <form onSubmit={handleAdd} className="space-y-4">
                             <div className="space-y-2">
@@ -517,7 +537,7 @@ export default function AccountingPage() {
                                     type="text"
                                     required
                                     className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder="Örn: Yemek Fişi"
+                                    placeholder={entryType === 'income' ? "Örn: Danışmanlık Faturası" : "Örn: Yemek Fişi"}
                                     value={newEntry.description}
                                     onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
                                 />
@@ -525,7 +545,7 @@ export default function AccountingPage() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-muted-foreground">Fiş Tutarı (KDV Dahil)</label>
+                                    <label className="text-sm font-medium text-muted-foreground">Tutar (KDV Dahil)</label>
                                     <input
                                         type="number"
                                         required

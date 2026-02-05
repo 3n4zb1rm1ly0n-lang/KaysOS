@@ -151,6 +151,49 @@ export default function AccountingPage() {
 
     const quickResult = calculateQuickTax();
 
+    // Manual Entry State
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newEntry, setNewEntry] = useState({
+        description: '',
+        amount: '',
+        taxRate: 20,
+        date: new Date().toISOString().split('T')[0],
+        category: 'Diğer'
+    });
+
+    const handleAdd = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const numericAmount = parseFloat(newEntry.amount);
+            const rate = Number(newEntry.taxRate);
+            const taxAmount = (numericAmount * rate) / (100 + rate);
+
+            const { error } = await supabase.from('tax_entries').insert([{
+                description: newEntry.description,
+                amount: numericAmount,
+                tax_rate: rate,
+                tax_amount: taxAmount,
+                date: newEntry.date,
+                category: newEntry.category
+            }]);
+
+            if (error) throw error;
+
+            fetchTaxRecords();
+            setShowAddModal(false);
+            setNewEntry({
+                description: '',
+                amount: '',
+                taxRate: 20,
+                date: new Date().toISOString().split('T')[0],
+                category: 'Diğer'
+            });
+        } catch (error) {
+            console.error('Error adding tax entry:', error);
+            alert('Hata oluştu.');
+        }
+    };
+
     if (loading) {
         return (
             <div className="h-full flex items-center justify-center">
@@ -168,6 +211,13 @@ export default function AccountingPage() {
                         Otomatik hesaplanan KDV raporlarınız. (Veriler Gelir ve Giderlerden çekilir)
                     </p>
                 </div>
+                <button
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
+                >
+                    <FileText className="w-5 h-5" />
+                    Manuel Fiş Ekle
+                </button>
             </div>
 
             {/* Tax Summary Cards */}
@@ -224,7 +274,7 @@ export default function AccountingPage() {
                         <h3 className="text-xs font-medium text-muted-foreground">Yıllık İndirilecek KDV</h3>
                         <div className="mt-1 text-2xl font-bold text-foreground">
                             ₺{records
-                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gider' || r.type === 'Manuel İndirim'))
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0)
                                 .toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                         </div>
@@ -235,14 +285,14 @@ export default function AccountingPage() {
                             .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
                             .reduce((acc, curr) => acc + curr.taxAmount, 0) -
                             records
-                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gider' || r.type === 'Manuel İndirim'))
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0)) > 0 ? 'text-orange-600' : 'text-green-600'
                             }`}>
                             ₺{Math.abs(records
                                 .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gelir')
                                 .reduce((acc, curr) => acc + curr.taxAmount, 0) -
                                 records
-                                    .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && r.type === 'Gider')
+                                    .filter(r => new Date(r.date).getFullYear() === new Date().getFullYear() && (r.type === 'Gider' || r.type === 'Manuel İndirim'))
                                     .reduce((acc, curr) => acc + curr.taxAmount, 0)
                             ).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                         </div>
@@ -402,7 +452,9 @@ export default function AccountingPage() {
                                             <td className="px-4 py-3">
                                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${record.type === 'Gelir'
                                                     ? 'bg-green-500/10 text-green-500'
-                                                    : 'bg-red-500/10 text-red-500'
+                                                    : record.type === 'Manuel İndirim'
+                                                        ? 'bg-blue-500/10 text-blue-500'
+                                                        : 'bg-red-500/10 text-red-500'
                                                     }`}>
                                                     {record.type}
                                                 </span>
@@ -421,6 +473,73 @@ export default function AccountingPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Manual Entry Modal */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
+                        <h3 className="text-xl font-bold mb-4">Manuel Fiş Ekle</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Bu alandan eklediğiniz fişler kasanızdan para çıkışı olarak görünmez, sadece vergi hesaplamasında 'İndirilecek KDV' olarak kullanılır.
+                        </p>
+                        <form onSubmit={handleAdd} className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-muted-foreground">Açıklama</label>
+                                <input
+                                    type="text"
+                                    required
+                                    className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                    placeholder="Örn: Yemek Fişi"
+                                    value={newEntry.description}
+                                    onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Fiş Tutarı (KDV Dahil)</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="0.00"
+                                        value={newEntry.amount}
+                                        onChange={(e) => setNewEntry({ ...newEntry, amount: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">KDV Oranı</label>
+                                    <select
+                                        className="w-full px-3 py-2 bg-secondary/50 rounded-lg border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                                        value={newEntry.taxRate}
+                                        onChange={(e) => setNewEntry({ ...newEntry, taxRate: Number(e.target.value) })}
+                                    >
+                                        <option value={1}>%1</option>
+                                        <option value={10}>%10</option>
+                                        <option value={20}>%20</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddModal(false)}
+                                    className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
+                                >
+                                    İptal
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                                >
+                                    Ekle
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -11,7 +11,8 @@ import {
     PieChart,
     Loader2,
     Calendar,
-    AlertCircle
+    AlertCircle,
+    Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getNextTaxDeadlines, calculateEstimatedIncomeTax } from '@/lib/tax-utils';
@@ -160,6 +161,21 @@ export default function AccountingPage() {
         date: new Date().toISOString().split('T')[0],
         category: 'Diğer'
     });
+
+    const handleDelete = async (id: string, type: string) => {
+        if (type !== 'Manuel İndirim') return; // Sadece manuel fişler silinebilir
+
+        if (!confirm('Bu manuel fişi silmek istediğinize emin misiniz?')) return;
+
+        try {
+            const { error } = await supabase.from('tax_entries').delete().eq('id', id);
+            if (error) throw error;
+            fetchTaxRecords();
+        } catch (error) {
+            console.error('Silme hatası:', error);
+            alert('Silinirken hata oluştu.');
+        }
+    };
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -436,6 +452,7 @@ export default function AccountingPage() {
                                     <th className="px-4 py-3 text-right">Tutar</th>
                                     <th className="px-4 py-3 text-right">Oran</th>
                                     <th className="px-4 py-3 text-right">KDV</th>
+                                    <th className="px-4 py-3 w-10"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -464,6 +481,17 @@ export default function AccountingPage() {
                                             <td className="px-4 py-3 text-right text-muted-foreground">% {record.taxRate}</td>
                                             <td className="px-4 py-3 text-right font-mono font-medium">
                                                 ₺{record.taxAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                {record.type === 'Manuel İndirim' && (
+                                                    <button
+                                                        onClick={() => handleDelete(record.id, record.type)}
+                                                        className="p-1 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 rounded transition-colors"
+                                                        title="Sil"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))

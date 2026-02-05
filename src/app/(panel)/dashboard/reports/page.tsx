@@ -73,7 +73,7 @@ export default function AccountingPage() {
             if (incomeData) {
                 const incomes: TaxRecord[] = incomeData.map(item => ({
                     id: item.id,
-                    date: item.date,
+                    date: item.invoice_date || item.date, // PREFER INVOICE DATE FOR TAX
                     type: 'Gelir',
                     description: item.description || item.source,
                     totalAmount: item.amount,

@@ -312,14 +312,47 @@ export default function SettingsPage() {
                 <div className="p-6 border-b">
                     <h3 className="font-semibold">Genel Tercihler</h3>
                 </div>
-                <div className="p-6 space-y-4 opacity-50 pointer-events-none">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="font-medium">Karanlık Mod</p>
-                            <p className="text-sm text-muted-foreground">Uygulama temasını değiştirin</p>
+                <div className="p-6 space-y-6">
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h4 className="font-medium">Asistan Rengi</h4>
+                                <p className="text-sm text-muted-foreground">Sağ alttaki finans asistanının ana rengini seçin.</p>
+                            </div>
                         </div>
-                        <div className="w-10 h-6 bg-primary/20 rounded-full relative">
-                            <div className="absolute right-1 top-1 w-4 h-4 bg-primary rounded-full"></div>
+
+                        <div className="flex gap-4">
+                            {[
+                                { id: 'blue', color: 'bg-blue-600', label: 'Mavi' },
+                                { id: 'purple', color: 'bg-purple-600', label: 'Mor' },
+                                { id: 'green', color: 'bg-emerald-500', label: 'Yeşil' },
+                                { id: 'orange', color: 'bg-orange-500', label: 'Turuncu' },
+                                { id: 'red', color: 'bg-red-600', label: 'Kırmızı' },
+                            ].map((theme) => (
+                                <button
+                                    key={theme.id}
+                                    onClick={() => {
+                                        localStorage.setItem('assistant_color', theme.id);
+                                        window.dispatchEvent(new Event('assistant-color-change'));
+                                    }}
+                                    className="group relative flex flex-col items-center gap-2"
+                                >
+                                    <div className={`w-12 h-12 rounded-full ${theme.color} shadow-lg ring-offset-2 ring-offset-background transition-all hover:scale-110 group-focus:ring-2`} />
+                                    <span className="text-xs text-muted-foreground">{theme.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="pt-6 border-t">
+                        <div className="flex items-center justify-between opacity-50 pointer-events-none">
+                            <div>
+                                <p className="font-medium">Karanlık Mod</p>
+                                <p className="text-sm text-muted-foreground">Uygulama temasını değiştirin</p>
+                            </div>
+                            <div className="w-10 h-6 bg-primary/20 rounded-full relative">
+                                <div className="absolute right-1 top-1 w-4 h-4 bg-primary rounded-full"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

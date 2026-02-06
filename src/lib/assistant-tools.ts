@@ -62,6 +62,43 @@ export const setBudgetLimitSchema = z.object({
     dryRun: z.boolean().default(true),
 });
 
+export const createDebtSchema = z.object({
+    amount: z.number(),
+    creditor: z.string().describe("Person or company to owe"),
+    category: z.string().optional(),
+    dueDate: z.string().describe("ISO date string for due date"),
+    description: z.string().optional(),
+    dryRun: z.boolean().default(true),
+});
+
+export const createInvoiceSchema = z.object({
+    name: z.string().describe("Name of the invoice/expense"),
+    provider: z.string().describe("Provider name (e.g. Enerjisa)"),
+    amount: z.number(),
+    dayOfMonth: z.number().min(1).max(31).describe("Day of month to repeat"),
+    category: z.enum(['Enerji', 'Su', 'İletişim', 'Kira', 'Vergi', 'Diğer']),
+    dryRun: z.boolean().default(true),
+});
+
+export const createSavingsGoalSchema = z.object({
+    name: z.string(),
+    targetAmount: z.number(),
+    category: z.string().optional(),
+    deadline: z.string().optional().describe("ISO date string"),
+    dryRun: z.boolean().default(true),
+});
+
+export const updateSavingsAmountSchema = z.object({
+    goalId: z.string().uuid(),
+    amountToAdd: z.number().describe("Amount to add (positive) or remove (negative)"),
+    dryRun: z.boolean().default(true),
+});
+
+export const getCalendarEventsSchema = z.object({
+    startDate: z.string().describe("ISO date string (YYYY-MM-DD)"),
+    endDate: z.string().describe("ISO date string (YYYY-MM-DD)"),
+});
+
 // --- TOOL IMPLEMENTATIONS ---
 
 async function logAudit(actionType: string, entityId: string | null, before: any, after: any, reason: string) {
@@ -372,6 +409,169 @@ export const tools = {
         await logAudit('set_budget', existingCat.id, existingCat, data, `Updated budget for ${category}`);
 
         return { status: 'success', message: `Budget updated for ${category}.`, record: data };
+    },
+
+    createDebt: async ({ amount, creditor, category, dueDate, description, dryRun }: z.infer<typeof createDebtSchema>) => {
+        if (dryRun) {
+            return {
+                status: 'proposed',
+                message: `PREVIEW: Create debt of ${amount} to ${creditor} due on ${dueDate}.`,
+                action: 'createDebt',
+                params: { amount, creditor, category, dueDate, description }
+            };
+        }
+
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+            .from('debts')
+            .insert({
+                amount,
+                creditor,
+                category: category || 'Diğer',
+                due_date: dueDate,
+                description: description || '',
+                created_date: new Date().toISOString(),
+                status: 'Bekliyor'
+            })
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+        await logAudit('create_debt', data.id, null, data, 'Created via AI Assistant');
+        return { status: 'success', message: 'Debt created.', record: data };
+    },
+
+    createInvoice: async ({ name, provider, amount, dayOfMonth, category, dryRun }: z.infer<typeof createInvoiceSchema>) => {
+        if (dryRun) {
+            return {
+                status: 'proposed',
+                message: `PREVIEW: Create recurring invoice ${name} (${category}) of ${amount} TL on day ${dayOfMonth} of every month.`,
+                action: 'createInvoice',
+                params: { name, provider, amount, dayOfMonth, category }
+            };
+        }
+
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+            .from('recurring_expenses')
+            .insert({
+                name,
+                provider,
+                amount,
+                day_of_month: dayOfMonth,
+                category,
+                status: 'Bekliyor'
+            })
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+        await logAudit('create_invoice', data.id, null, data, 'Created recurring invoice via AI');
+        return { status: 'success', message: 'Invoice created.', record: data };
+    },
+
+    createSavingsGoal: async ({ name, targetAmount, category, deadline, dryRun }: z.infer<typeof createSavingsGoalSchema>) => {
+        if (dryRun) {
+            return {
+                status: 'proposed',
+                message: `PREVIEW: Create savings goal '${name}' for ${targetAmount} TL.`,
+                action: 'createSavingsGoal',
+                params: { name, targetAmount, category, deadline }
+            };
+        }
+
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+            .from('savings')
+            .insert({
+                name,
+                target_amount: targetAmount,
+                current_amount: 0,
+                category: category || 'Diğer',
+                deadline: deadline || null,
+                icon_color: 'blue'
+            })
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+        await logAudit('create_savings', data.id, null, data, 'Created savings goal via AI');
+        return { status: 'success', message: 'Savings goal created.', record: data };
+    },
+
+    updateSavingsAmount: async ({ goalId, amountToAdd, dryRun }: z.infer<typeof updateSavingsAmountSchema>) => {
+        const supabase = getSupabase();
+
+        // Fetch current to calculate new total
+        const { data: current, error: fetchError } = await supabase.from('savings').select('current_amount, name').eq('id', goalId).single();
+        if (fetchError) throw new Error(fetchError.message);
+
+        const newAmount = Number(current.current_amount) + amountToAdd;
+
+        if (dryRun) {
+            return {
+                status: 'proposed',
+                message: `PREVIEW: Add ${amountToAdd} TL to '${current.name}'. New total: ${newAmount}.`,
+                action: 'updateSavingsAmount',
+                params: { goalId, amountToAdd }
+            };
+        }
+
+        const { data, error } = await supabase
+            .from('savings')
+            .update({ current_amount: newAmount })
+            .eq('id', goalId)
+            .select()
+            .single();
+
+        if (error) throw new Error(error.message);
+        await logAudit('update_savings', goalId, current, data, 'Updated savings amount via AI');
+        return { status: 'success', message: 'Savings updated.', record: data };
+    },
+
+    getCalendarEvents: async ({ startDate, endDate }: z.infer<typeof getCalendarEventsSchema>) => {
+        const supabase = getSupabase();
+
+        const [incomes, expenses, debts, invoices] = await Promise.all([
+            supabase.from('incomes').select('date, amount, source, category').gte('date', startDate).lte('date', endDate),
+            supabase.from('expenses').select('date, amount, recipient, category').gte('date', startDate).lte('date', endDate),
+            supabase.from('debts').select('due_date, amount, creditor').gte('due_date', startDate).lte('due_date', endDate),
+            supabase.from('recurring_expenses').select('*')
+        ]);
+
+        // Transform recurring expenses to events in this range
+        const recurringEvents = (invoices.data || []).flatMap((inv: any) => {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const events = [];
+            let current = new Date(start.getFullYear(), start.getMonth(), inv.day_of_month);
+
+            // Adjust if start day is after recurring day
+            if (current < start) {
+                current.setMonth(current.getMonth() + 1);
+            }
+
+            while (current <= end) {
+                events.push({
+                    date: current.toISOString().split('T')[0],
+                    amount: inv.amount,
+                    title: `${inv.name} (Fatura)`,
+                    type: 'invoice'
+                });
+                current.setMonth(current.getMonth() + 1);
+            }
+            return events;
+        });
+
+        return {
+            status: 'success',
+            events: [
+                ...(incomes.data?.map((i: any) => ({ ...i, type: 'income', title: i.source })) || []),
+                ...(expenses.data?.map((e: any) => ({ ...e, type: 'expense', title: e.recipient })) || []),
+                ...(debts.data?.map((d: any) => ({ date: d.due_date, amount: d.amount, title: d.creditor, type: 'debt' })) || []),
+                ...recurringEvents
+            ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        };
     }
 };
 
@@ -514,6 +714,93 @@ export const openAITools = [
                     dryRun: { type: "boolean" }
                 },
                 required: ["category", "amount"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "createDebt",
+            description: "Record a new debt.",
+            parameters: {
+                type: "object",
+                properties: {
+                    amount: { type: "number" },
+                    creditor: { type: "string" },
+                    category: { type: "string" },
+                    dueDate: { type: "string", description: "ISO date" },
+                    description: { type: "string" },
+                    dryRun: { type: "boolean" }
+                },
+                required: ["amount", "creditor", "dueDate"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "createInvoice",
+            description: "Create a recurring invoice/expense.",
+            parameters: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    provider: { type: "string" },
+                    amount: { type: "number" },
+                    dayOfMonth: { type: "number" },
+                    category: { type: "string", enum: ['Enerji', 'Su', 'İletişim', 'Kira', 'Vergi', 'Diğer'] },
+                    dryRun: { type: "boolean" }
+                },
+                required: ["name", "amount", "dayOfMonth", "category"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "createSavingsGoal",
+            description: "Create a new savings goal.",
+            parameters: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    targetAmount: { type: "number" },
+                    category: { type: "string" },
+                    deadline: { type: "string", description: "ISO date optional" },
+                    dryRun: { type: "boolean" }
+                },
+                required: ["name", "targetAmount"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "updateSavingsAmount",
+            description: "Add or remove money from a savings goal.",
+            parameters: {
+                type: "object",
+                properties: {
+                    goalId: { type: "string", description: "UUID of the goal" },
+                    amountToAdd: { type: "number", description: "Positive to add, negative to remove" },
+                    dryRun: { type: "boolean" }
+                },
+                required: ["goalId", "amountToAdd"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "getCalendarEvents",
+            description: "Get financial events (incomes, expenses, debts, invoices) for a date range.",
+            parameters: {
+                type: "object",
+                properties: {
+                    startDate: { type: "string" },
+                    endDate: { type: "string" }
+                },
+                required: ["startDate", "endDate"]
             }
         }
     }

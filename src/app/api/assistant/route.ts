@@ -3,10 +3,12 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { tools, openAITools } from '@/lib/assistant-tools';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI client logic inside handler or helper
+const getOpenAIClient = (apiKey: string | null) => {
+    const key = apiKey || process.env.OPENAI_API_KEY;
+    if (!key) throw new Error("OpenAI API Key is missing. Please set it in Settings.");
+    return new OpenAI({ apiKey: key });
+};
 
 const SYSTEM_PROMPT = `
 Sen Kaysia Finans Asistanısın, kullanıcının Supabase üzerindeki finansal verilerini yöneten yardımsever bir yapay zekasın.
@@ -39,6 +41,10 @@ export async function POST(req: Request) {
             { role: 'system', content: SYSTEM_PROMPT },
             ...messages
         ];
+
+        // Initialize client with key from header or env
+        const apiKey = req.headers.get('x-openai-key');
+        const openai = getOpenAIClient(apiKey);
 
         // First call to OpenAI
         const response = await openai.chat.completions.create({

@@ -41,7 +41,6 @@ export function ActiveChatInterface({ className }: ActiveChatInterfaceProps) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-OpenAI-Key': localStorage.getItem('openai_api_key') || ''
                 },
                 body: JSON.stringify({
                     messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content }))

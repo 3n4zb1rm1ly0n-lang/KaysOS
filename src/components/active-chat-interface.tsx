@@ -11,9 +11,10 @@ interface Message {
 
 interface ActiveChatInterfaceProps {
     className?: string;
+    onClose?: () => void;
 }
 
-export function ActiveChatInterface({ className }: ActiveChatInterfaceProps) {
+export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ export function ActiveChatInterface({ className }: ActiveChatInterfaceProps) {
 
     // Helper: Parse Agent from content
     const getAgentStyle = (content: string) => {
-        if (content.startsWith('[MUDUR]')) return { name: 'Müdür', color: 'bg-zinc-950 border-amber-500/50 text-amber-500', icon: '👔' };
+        if (content.startsWith('[ASISTAN]')) return { name: 'Asistan', color: 'bg-zinc-950 border-amber-500/50 text-amber-500', icon: '🤖' };
         if (content.startsWith('[FINANS]')) return { name: 'Finansman', color: 'bg-emerald-900/50 border-emerald-500/50 text-emerald-400', icon: '💰' };
         if (content.startsWith('[MUHASEBE]')) return { name: 'Muhasebe', color: 'bg-blue-900/50 border-blue-500/50 text-blue-400', icon: 'calculator' };
         if (content.startsWith('[ANALIST]')) return { name: 'Analist', color: 'bg-purple-900/50 border-purple-500/50 text-purple-400', icon: 'chart' };
@@ -101,11 +102,19 @@ export function ActiveChatInterface({ className }: ActiveChatInterfaceProps) {
             {/* Header indicating the team */}
             <div className="p-3 border-b border-white/5 flex items-center justify-between bg-black/20">
                 <div className="flex items-center gap-2 text-xs font-mono text-zinc-500">
-                    <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Müdür</span>
+                    <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Asistan</span>
                     <span className="flex items-center gap-1 text-emerald-500"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Finans</span>
                     <span className="flex items-center gap-1 text-blue-500"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Muhasebe</span>
                     <span className="flex items-center gap-1 text-purple-500"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Analiz</span>
                 </div>
+                {onClose && (
+                    <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1">
+                        <span className="sr-only">Kapat</span>
+                        <div className="hover:bg-white/10 rounded-md p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </div>
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-6 p-6 scrollbar-thin scrollbar-thumb-gray-800">
@@ -158,8 +167,8 @@ export function ActiveChatInterface({ className }: ActiveChatInterfaceProps) {
 
                                 <div
                                     className={`p-4 rounded-2xl whitespace-pre-wrap text-sm shadow-sm ${msg.role === 'user'
-                                            ? 'bg-blue-600 text-white rounded-tr-none'
-                                            : `${agentStyle?.color || 'bg-zinc-800'} text-gray-100 rounded-tl-none border border-white/5`
+                                        ? 'bg-blue-600 text-white rounded-tr-none'
+                                        : `${agentStyle?.color || 'bg-zinc-800'} text-gray-100 rounded-tl-none border border-white/5`
                                         }`}
                                 >
                                     {finalContent}

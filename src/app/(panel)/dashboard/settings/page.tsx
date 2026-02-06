@@ -172,33 +172,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="p-6 grid md:grid-cols-2 gap-8">
-                    {/* Color Picker */}
-                    <div>
-                        <div className="mb-4">
-                            <h4 className="font-medium">Asistan Rengi</h4>
-                            <p className="text-sm text-muted-foreground">Asistanın görünümünü kişiselleştirin.</p>
-                        </div>
-                        <div className="flex gap-4">
-                            {[
-                                { id: 'blue', color: 'bg-blue-600', label: 'Mavi' },
-                                { id: 'purple', color: 'bg-purple-600', label: 'Mor' },
-                                { id: 'green', color: 'bg-emerald-500', label: 'Yeşil' },
-                                { id: 'orange', color: 'bg-orange-500', label: 'Turuncu' },
-                                { id: 'red', color: 'bg-red-600', label: 'Kırmızı' },
-                            ].map((theme) => (
-                                <button
-                                    key={theme.id}
-                                    onClick={() => {
-                                        localStorage.setItem('assistant_color', theme.id);
-                                        window.dispatchEvent(new Event('assistant-color-change'));
-                                    }}
-                                    className="group relative flex flex-col items-center gap-2"
-                                >
-                                    <div className={`w-10 h-10 rounded-full ${theme.color} shadow-lg ring-offset-2 ring-offset-background transition-all hover:scale-110 group-focus:ring-2`} />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+
 
 
                 </div>

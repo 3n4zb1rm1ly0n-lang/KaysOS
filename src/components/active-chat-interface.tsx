@@ -93,6 +93,8 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
     const suggestions = [
         "Şirketin genel nakit durumu nasıl?",
         "Geçen ay ne kadar harcama yaptık?",
+        "Market alışverişi 3500 TL gider ekle.",
+        "5000 TL Nakit Satış geliri ekle.",
         "Vadesi geçen borçları listele.",
         "Kira için 10.000 TL bütçe ayarla."
     ];

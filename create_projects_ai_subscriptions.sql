@@ -36,5 +36,9 @@ create table if not exists ai_subscriptions (
 alter table projects enable row level security;
 alter table ai_subscriptions enable row level security;
 
+-- Politika zaten varsa 42710 hatası vermemesi için önce kaldır, sonra oluştur (script tekrar çalıştırılabilir)
+drop policy if exists "Enable access to all users" on projects;
 create policy "Enable access to all users" on projects for all using (true) with check (true);
+
+drop policy if exists "Enable access to all users" on ai_subscriptions;
 create policy "Enable access to all users" on ai_subscriptions for all using (true) with check (true);

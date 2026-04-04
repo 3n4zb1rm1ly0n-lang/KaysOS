@@ -195,13 +195,17 @@ export default function ProjectsPage() {
     const [editingAiId, setEditingAiId] = useState<string | null>(null);
     const [aiForm, setAiForm] = useState(emptyAiForm);
 
-    const fetchProjects = async () => {
+    /** Hata mesajı döner; başarıda null */
+    const fetchProjects = async (): Promise<string | null> => {
         const { data, error } = await supabase
             .from('projects')
             .select('*')
             .order('updated_at', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('projects select', error);
+            return error.message || String(error);
+        }
 
         const rows: ProjectRow[] = (data || []).map((row) => ({
             ...row,
@@ -209,16 +213,21 @@ export default function ProjectsPage() {
             accounts: parseAccounts(row.accounts)
         }));
         setProjects(rows);
+        return null;
     };
 
-    const fetchAi = async () => {
+    const fetchAi = async (): Promise<string | null> => {
         const { data, error } = await supabase
             .from('ai_subscriptions')
             .select('*')
-            .order('renews_at', { ascending: true, nullsFirst: false });
+            .order('renews_at', { ascending: true });
 
-        if (error) throw error;
+        if (error) {
+            console.error('ai_subscriptions select', error);
+            return error.message || String(error);
+        }
         setAiSubs((data || []) as AiSubscriptionRow[]);
+        return null;
     };
 
     useEffect(() => {
@@ -226,18 +235,35 @@ export default function ProjectsPage() {
         (async () => {
             setLoading(true);
             setLoadError(null);
-            try {
-                await Promise.all([fetchProjects(), fetchAi()]);
-            } catch (e) {
-                console.error(e);
-                if (!cancelled) {
-                    setLoadError(
-                        'Veriler yüklenemedi. Supabase’de `create_projects_ai_subscriptions.sql` dosyasını çalıştırdığınızdan emin olun.'
-                    );
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
+            setProjectListNotice(null);
+
+            const errProjects = await fetchProjects();
+            if (cancelled) return;
+
+            const errAi = await fetchAi();
+            if (cancelled) return;
+
+            if (errProjects && errAi) {
+                setProjects([]);
+                setAiSubs([]);
+                setLoadError(
+                    `Supabase hatası (her iki tablo):\n• Projeler: ${errProjects}\n• AI abonelikleri: ${errAi}\n\n` +
+                        'Kontrol: Supabase’de aynı projede `projects` ve `ai_subscriptions` tabloları var mı? SQL Editor’de `create_projects_ai_subscriptions.sql` tamamı çalıştı mı? Vercel’deki `NEXT_PUBLIC_SUPABASE_URL` / anon key bu projeye ait mi?'
+                );
+            } else if (errProjects) {
+                setProjects([]);
+                setLoadError(
+                    `Projeler yüklenemedi: ${errProjects}\n\n` +
+                        'Tablo yoksa `create_projects_ai_subscriptions.sql` çalıştırın. RLS / API anahtarı için Supabase → Project Settings → API.'
+                );
+            } else if (errAi) {
+                setAiSubs([]);
+                setProjectListNotice(
+                    `AI abonelikleri yüklenemedi (projeler listelendi): ${errAi}. Tablo yoksa aynı SQL dosyasındaki ai_subscriptions bölümünü çalıştırın.`
+                );
             }
+
+            setLoading(false);
         })();
         return () => {
             cancelled = true;
@@ -497,7 +523,7 @@ export default function ProjectsPage() {
             </div>
 
             {loadError && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm whitespace-pre-wrap">
                     {loadError}
                 </div>
             )}

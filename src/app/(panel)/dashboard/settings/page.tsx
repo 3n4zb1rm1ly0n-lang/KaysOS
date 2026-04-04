@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { FileSpreadsheet, FileText, Download, Loader2, Database, Tag, Plus, Trash2, Settings2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FileSpreadsheet, FileText, Download, Loader2, Database, Tag, Plus, Trash2, Settings2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -23,8 +23,10 @@ export default function SettingsPage() {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [loadingCategories, setLoadingCategories] = useState(false);
 
-    // Initial Fetch (You might want to put this in a useEffect)
-    // For now, we'll fetch on mount if needed, or when the section is opened.
+    const [resetModalOpen, setResetModalOpen] = useState(false);
+    const [resetPassword, setResetPassword] = useState('');
+    const [resetLoading, setResetLoading] = useState(false);
+    const [resetMessage, setResetMessage] = useState<string | null>(null);
 
     const fetchCategories = async () => {
         setLoadingCategories(true);
@@ -64,10 +66,9 @@ export default function SettingsPage() {
         }
     };
 
-    // Load categories on mount
-    useState(() => {
+    useEffect(() => {
         fetchCategories();
-    });
+    }, []);
 
     const fetchAllData = async () => {
         const [incomesRes, expensesRes, debtsRes] = await Promise.all([
@@ -114,6 +115,36 @@ export default function SettingsPage() {
 
     // PDF Export function simplification for demo - robust implementation usually requires custom fonts for Turkish characters
     // Standard fonts don't support special Turkish chars perfectly, but it works for basic needs.
+    const handleResetDatabase = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setResetMessage(null);
+        setResetLoading(true);
+        try {
+            const res = await fetch('/api/admin/reset-database', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: resetPassword })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setResetMessage(data.error || 'İşlem başarısız.');
+                return;
+            }
+            setResetPassword('');
+            setResetModalOpen(false);
+            setCategories([]);
+            let msg = 'Veritabanı sıfırlandı.';
+            if (data.failures?.length) {
+                msg += ` Uyarı: ${data.failures.length} tabloda sorun oluştu. ${data.hint || ''}`;
+            }
+            alert(msg);
+        } catch {
+            setResetMessage('Ağ hatası veya sunucu yanıt vermedi.');
+        } finally {
+            setResetLoading(false);
+        }
+    };
+
     const exportToPDF = async () => {
         setLoading(true);
         try {
@@ -320,6 +351,88 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </div>
+
+            <div className="border rounded-xl bg-card overflow-hidden ring-1 ring-red-500/25">
+                <div className="p-6 border-b bg-red-500/5 flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    <h3 className="font-semibold text-red-400">Tehlikeli bölge</h3>
+                </div>
+                <div className="p-6 space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Tüm finans kayıtları, kategoriler, projeler, AI abonelikleri ve ilgili tablolar kalıcı
+                        olarak silinir. Bu işlem geri alınamaz. Yalnızca panel şifreniz (giriş şifreniz) ile
+                        yapılabilir.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setResetMessage(null);
+                            setResetPassword('');
+                            setResetModalOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                    >
+                        Tüm verileri sıfırla…
+                    </button>
+                </div>
+            </div>
+
+            {resetModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75">
+                    <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#161B22] shadow-2xl p-6 space-y-4">
+                        <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-red-500" />
+                            Veritabanını sıfırla
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Devam etmek için admin giriş şifrenizi girin. Tüm listelenen tablolar
+                            boşaltılacaktır.
+                        </p>
+                        <form onSubmit={handleResetDatabase} className="space-y-4">
+                            <div>
+                                <label htmlFor="reset-db-password" className="sr-only">
+                                    Şifre
+                                </label>
+                                <input
+                                    id="reset-db-password"
+                                    type="password"
+                                    autoComplete="current-password"
+                                    value={resetPassword}
+                                    onChange={(e) => setResetPassword(e.target.value)}
+                                    placeholder="Panel şifresi"
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                                />
+                            </div>
+                            {resetMessage && (
+                                <p className="text-sm text-red-400">{resetMessage}</p>
+                            )}
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setResetModalOpen(false);
+                                        setResetPassword('');
+                                        setResetMessage(null);
+                                    }}
+                                    className="px-4 py-2 rounded-lg text-sm border border-border hover:bg-secondary/50"
+                                >
+                                    Vazgeç
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={resetLoading || !resetPassword}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2"
+                                >
+                                    {resetLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : null}
+                                    Evet, sıfırla
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Other Settings Placeholder */}
             <div className="border rounded-xl bg-card">

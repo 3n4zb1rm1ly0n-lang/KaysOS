@@ -20,6 +20,12 @@ export function middleware(request: NextRequest) {
         }
     }
 
+    if (pathname.startsWith('/api/admin')) {
+        if (!authCookie || authCookie.value !== 'true') {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+    }
+
     // Redirect / to /login if not authenticated, or /dashboard if authenticated
     if (pathname === '/') {
 
@@ -34,5 +40,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ['/', '/dashboard/:path*', '/login'],
+    matcher: ['/', '/dashboard/:path*', '/login', '/api/admin/:path*'],
 };

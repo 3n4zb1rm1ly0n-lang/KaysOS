@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock } from 'lucide-react';
+import { DEFAULT_ADMIN_PASSWORD } from '@/lib/admin-password';
 
 export default function LoginPage() {
     const [password, setPassword] = useState('');
@@ -12,7 +13,9 @@ export default function LoginPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (password === '141592') {
+        const expected =
+            process.env.NEXT_PUBLIC_ADMIN_PASSWORD?.trim() || DEFAULT_ADMIN_PASSWORD;
+        if (password === expected) {
             document.cookie = 'auth=true; path=/; max-age=86400'; // 1 day
             router.push('/dashboard');
         } else {

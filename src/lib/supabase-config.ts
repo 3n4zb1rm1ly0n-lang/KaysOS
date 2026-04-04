@@ -18,8 +18,10 @@ function decodeJwtPayload(token: string): { role?: string } | null {
         if (typeof Buffer !== 'undefined') {
             json = Buffer.from(padded, 'base64').toString('utf8');
         } else if (typeof atob === 'function') {
+            // split('') — string spread [...s] eski TS hedeflerinde downlevelIteration ister
             json = decodeURIComponent(
-                [...atob(padded)]
+                atob(padded)
+                    .split('')
                     .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
                     .join('')
             );

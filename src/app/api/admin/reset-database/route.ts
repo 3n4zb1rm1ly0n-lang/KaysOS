@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getServerAdminPassword } from '@/lib/admin-auth';
-import { createSupabaseServiceClient } from '@/lib/supabase';
+import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 const TABLES = [
     'audit_logs',

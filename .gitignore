@@ -3,9 +3,10 @@ node_modules
 .pnp
 .pnp.js
 
-# Next.js build & cache (büyük; asla repoda tutulmamalı)
-.next
-out
+# Next.js build & cache (büyük; GitHub 100MB limit; asla commit etmeyin)
+.next/
+**/.next/
+out/
 
 # Production
 build

@@ -108,6 +108,8 @@ const emptyProjectForm = () => ({
     description: '',
     status: 'idea' as ProjectStatus,
     notes: '',
+    use_domain: false,
+    domain_detail: '',
     use_vercel: false,
     vercel_detail: '',
     use_supabase: false,
@@ -147,6 +149,9 @@ type ProjectSavePayload = {
     updated_at: string;
 };
 
+/** Form state = kayıt gövdesi + güncelleme zamanı (submit’te eklenir) */
+type ProjectFormState = Omit<ProjectSavePayload, 'updated_at'>;
+
 function isMissingDomainColumnError(err: { message?: string; code?: string } | null): boolean {
     const msg = (err?.message || '').toLowerCase();
     if (msg.includes('use_domain') || msg.includes('domain_detail')) return true;
@@ -180,7 +185,9 @@ export default function ProjectsPage() {
 
     const [projectModalOpen, setProjectModalOpen] = useState(false);
     const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-    const [projectForm, setProjectForm] = useState(emptyProjectForm);
+    const [projectForm, setProjectForm] = useState<ProjectFormState>(() =>
+        emptyProjectForm()
+    );
     const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
     const [projectListNotice, setProjectListNotice] = useState<string | null>(null);
 

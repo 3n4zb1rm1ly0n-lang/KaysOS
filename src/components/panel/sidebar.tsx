@@ -16,8 +16,12 @@ import {
     GripVertical,
     Wallet,
     FileText,
+<<<<<<< HEAD
     PieChart,
     FolderKanban
+=======
+    PieChart
+>>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
 } from 'lucide-react';
 import {
     DndContext,
@@ -46,7 +50,10 @@ interface MenuItem {
 
 export const INITIAL_MENU_ITEMS: MenuItem[] = [
     { id: '1', label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+<<<<<<< HEAD
     { id: '1p', label: 'Projeler', href: '/dashboard/projects', icon: FolderKanban },
+=======
+>>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
     { id: '2', label: 'Gelirler', href: '/dashboard/incomes', icon: TrendingUp },
     { id: '3', label: 'Borçlar', href: '/dashboard/debts', icon: CreditCard },
     { id: '4', label: 'Faturalar', href: '/dashboard/invoices', icon: Receipt },

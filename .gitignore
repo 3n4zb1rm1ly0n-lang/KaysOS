@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Dependencies
 node_modules
 .pnp
@@ -33,3 +34,6 @@ Thumbs.db
 # Test / coverage
 coverage
 .nyc_output
+=======
+node_modules
+>>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583

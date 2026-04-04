@@ -31,6 +31,8 @@ interface ProjectRow {
     description: string | null;
     status: ProjectStatus;
     notes: string | null;
+    use_domain?: boolean;
+    domain_detail?: string | null;
     use_vercel: boolean;
     vercel_detail: string | null;
     use_supabase: boolean;
@@ -126,6 +128,47 @@ const emptyAiForm = () => ({
     notes: ''
 });
 
+type ProjectSavePayload = {
+    title: string;
+    description: string;
+    status: ProjectStatus;
+    notes: string;
+    use_domain: boolean;
+    domain_detail: string;
+    use_vercel: boolean;
+    vercel_detail: string;
+    use_supabase: boolean;
+    supabase_detail: string;
+    use_github: boolean;
+    github_detail: string;
+    use_gmail: boolean;
+    gmail_detail: string;
+    accounts: ProjectAccount[];
+    updated_at: string;
+};
+
+function isMissingDomainColumnError(err: { message?: string; code?: string } | null): boolean {
+    const msg = (err?.message || '').toLowerCase();
+    if (msg.includes('use_domain') || msg.includes('domain_detail')) return true;
+    if (err?.code === '42703' && msg.includes('domain')) return true;
+    return false;
+}
+
+function payloadWithoutDomainFields(
+    p: ProjectSavePayload
+): Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'> {
+    const { use_domain: _u, domain_detail: _d, ...rest } = p;
+    return rest;
+}
+
+function describeSaveError(err: unknown): string {
+    if (err && typeof err === 'object' && 'message' in err) {
+        const m = String((err as { message: string }).message).trim();
+        if (m) return m;
+    }
+    return 'Bilinmeyen hata.';
+}
+
 export default function ProjectsPage() {
     const [tab, setTab] = useState<'projects' | 'ai'>('projects');
     const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -138,6 +181,8 @@ export default function ProjectsPage() {
     const [projectModalOpen, setProjectModalOpen] = useState(false);
     const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
     const [projectForm, setProjectForm] = useState(emptyProjectForm);
+    const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
+    const [projectListNotice, setProjectListNotice] = useState<string | null>(null);
 
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [editingAiId, setEditingAiId] = useState<string | null>(null);
@@ -200,16 +245,20 @@ export default function ProjectsPage() {
     const openNewProject = () => {
         setEditingProjectId(null);
         setProjectForm(emptyProjectForm());
+        setProjectSaveError(null);
         setProjectModalOpen(true);
     };
 
     const openEditProject = (p: ProjectRow) => {
         setEditingProjectId(p.id);
+        setProjectSaveError(null);
         setProjectForm({
             title: p.title,
             description: p.description || '',
             status: p.status,
             notes: p.notes || '',
+            use_domain: !!p.use_domain,
+            domain_detail: p.domain_detail || '',
             use_vercel: !!p.use_vercel,
             vercel_detail: p.vercel_detail || '',
             use_supabase: !!p.use_supabase,
@@ -228,16 +277,19 @@ export default function ProjectsPage() {
 
     const saveProject = async (e: React.FormEvent) => {
         e.preventDefault();
+        setProjectSaveError(null);
         if (!projectForm.title.trim()) {
-            alert('Proje adı gerekli.');
+            setProjectSaveError('Proje adı gerekli.');
             return;
         }
 
-        const payload = {
+        const payload: ProjectSavePayload = {
             title: projectForm.title.trim(),
             description: projectForm.description.trim(),
             status: projectForm.status,
             notes: projectForm.notes.trim(),
+            use_domain: projectForm.use_domain,
+            domain_detail: projectForm.domain_detail.trim(),
             use_vercel: projectForm.use_vercel,
             vercel_detail: projectForm.vercel_detail.trim(),
             use_supabase: projectForm.use_supabase,
@@ -252,22 +304,46 @@ export default function ProjectsPage() {
             updated_at: new Date().toISOString()
         };
 
-        try {
+        const runSave = async (body: ProjectSavePayload | Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'>) => {
             if (editingProjectId) {
-                const { error } = await supabase
-                    .from('projects')
-                    .update(payload)
-                    .eq('id', editingProjectId);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase.from('projects').insert([payload]);
-                if (error) throw error;
+                return supabase.from('projects').update(body).eq('id', editingProjectId);
             }
+            return supabase.from('projects').insert([body]);
+        };
+
+        try {
+            let { error } = await runSave(payload);
+
+            if (error && isMissingDomainColumnError(error)) {
+                const fallback = payloadWithoutDomainFields(payload);
+                ({ error } = await runSave(fallback));
+                if (!error) {
+                    setProjectModalOpen(false);
+                    setProjectSaveError(null);
+                    setProjectListNotice(
+                        'Domain sütunları henüz yok: kayıt domain bilgisi olmadan saklandı. Supabase’de `add_projects_domain.sql` çalıştırıp projeyi düzenleyerek domain ekleyebilirsiniz.'
+                    );
+                    await fetchProjects();
+                    return;
+                }
+            }
+
+            if (error) {
+                const detail = describeSaveError(error);
+                const hint =
+                    /permission|policy|rls|jwt|auth/i.test(detail)
+                        ? ' Supabase RLS / API anahtarı ayarlarını kontrol edin.'
+                        : '';
+                setProjectSaveError(`Kayıt başarısız: ${detail}${hint}`);
+                return;
+            }
+
             setProjectModalOpen(false);
+            setProjectSaveError(null);
             await fetchProjects();
         } catch (err) {
             console.error(err);
-            alert('Kaydedilemedi.');
+            setProjectSaveError(`Kayıt başarısız: ${describeSaveError(err)}`);
         }
     };
 
@@ -419,6 +495,19 @@ export default function ProjectsPage() {
                 </div>
             )}
 
+            {projectListNotice && (
+                <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+                    <p>{projectListNotice}</p>
+                    <button
+                        type="button"
+                        onClick={() => setProjectListNotice(null)}
+                        className="shrink-0 text-amber-100/80 hover:text-amber-50 text-xs underline"
+                    >
+                        Kapat
+                    </button>
+                </div>
+            )}
+
             <div className="flex gap-1 p-1 rounded-xl bg-secondary/40 border border-border w-fit">
                 <button
                     type="button"
@@ -511,6 +600,11 @@ export default function ProjectsPage() {
                                 ) : null}
 
                                 <div className="flex flex-wrap gap-2 text-xs">
+                                    {p.use_domain && (
+                                        <span className="px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
+                                            Domain
+                                        </span>
+                                    )}
                                     {p.use_vercel && (
                                         <span className="px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
                                             Vercel
@@ -707,6 +801,17 @@ export default function ProjectsPage() {
                         <h2 className="text-lg font-semibold text-white">
                             {editingProjectId ? 'Projeyi düzenle' : 'Yeni proje'}
                         </h2>
+                        {projectSaveError && (
+                            <div
+                                className={`rounded-lg border px-3 py-2 text-sm ${
+                                    projectSaveError.includes('domain bilgisi olmadan')
+                                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                                        : 'border-red-500/40 bg-red-500/10 text-red-200'
+                                }`}
+                            >
+                                {projectSaveError}
+                            </div>
+                        )}
                         <form onSubmit={saveProject} className="space-y-4">
                             <div>
                                 <label className="block text-xs font-medium text-muted-foreground mb-1">
@@ -803,6 +908,16 @@ export default function ProjectsPage() {
 
                             {[
                                 {
+                                    key: 'domain' as const,
+                                    label: 'Domain',
+                                    use: projectForm.use_domain,
+                                    detail: projectForm.domain_detail,
+                                    setUse: (v: boolean) =>
+                                        setProjectForm((f) => ({ ...f, use_domain: v })),
+                                    setDetail: (v: string) =>
+                                        setProjectForm((f) => ({ ...f, domain_detail: v }))
+                                },
+                                {
                                     key: 'vercel' as const,
                                     label: 'Vercel',
                                     use: projectForm.use_vercel,
@@ -857,7 +972,11 @@ export default function ProjectsPage() {
                                         {row.label}
                                     </label>
                                     <input
-                                        placeholder="Proje URL, repo veya not"
+                                        placeholder={
+                                            row.key === 'domain'
+                                                ? 'Alan adı, registrar veya not'
+                                                : 'Proje URL, repo veya not'
+                                        }
                                         value={row.detail}
                                         onChange={(e) => row.setDetail(e.target.value)}
                                         disabled={!row.use}
@@ -883,7 +1002,10 @@ export default function ProjectsPage() {
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     type="button"
-                                    onClick={() => setProjectModalOpen(false)}
+                                    onClick={() => {
+                                        setProjectModalOpen(false);
+                                        setProjectSaveError(null);
+                                    }}
                                     className="px-4 py-2 rounded-lg text-sm border border-border hover:bg-secondary/50"
                                 >
                                     İptal

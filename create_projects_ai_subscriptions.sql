@@ -9,6 +9,8 @@ create table if not exists projects (
   description text default '',
   status text not null default 'idea',
   notes text default '',
+  use_domain boolean default false,
+  domain_detail text default '',
   use_vercel boolean default false,
   vercel_detail text default '',
   use_supabase boolean default false,

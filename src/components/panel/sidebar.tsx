@@ -16,6 +16,7 @@ import {
     FileText,
     PieChart,
     FolderKanban,
+    Globe,
     Landmark,
     ChevronDown,
     ChevronRight
@@ -77,6 +78,11 @@ export function Sidebar() {
                 <Link href="/dashboard/projects" className={linkClass('/dashboard/projects')}>
                     <FolderKanban className="w-5 h-5 shrink-0" />
                     <span>Projeler</span>
+                </Link>
+
+                <Link href="/dashboard/domains" className={linkClass('/dashboard/domains')}>
+                    <Globe className="w-5 h-5 shrink-0" />
+                    <span>Domainler</span>
                 </Link>
 
                 <div className="pt-1">

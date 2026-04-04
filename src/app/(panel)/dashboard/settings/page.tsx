@@ -359,7 +359,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="p-6 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                        Tüm finans kayıtları, kategoriler, projeler, AI abonelikleri ve ilgili tablolar kalıcı
+                        Tüm finans kayıtları, kategoriler, domainler, projeler, AI abonelikleri ve ilgili tablolar kalıcı
                         olarak silinir. Bu işlem geri alınamaz. Yalnızca panel şifreniz (giriş şifreniz) ile
                         yapılabilir.
                     </p>

@@ -27,7 +27,7 @@ interface CalendarEvent {
     date: string;
     title: string;
     amount: string;
-    type: 'incomes' | 'expenses' | 'debts' | 'invoices' | 'tax';
+    type: 'incomes' | 'expenses' | 'debts' | 'invoices' | 'tax' | 'domains' | 'projects';
 }
 
 const EventBadge = ({ type, title, amount }: { type: string, title: string, amount: string }) => {
@@ -38,6 +38,8 @@ const EventBadge = ({ type, title, amount }: { type: string, title: string, amou
             case 'debts': return 'bg-red-500/10 text-red-500 border-red-500/20';
             case 'expenses': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
             case 'tax': return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+            case 'domains': return 'bg-teal-500/10 text-teal-400 border-teal-500/25';
+            case 'projects': return 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25';
             default: return 'bg-gray-500/10 text-gray-500';
         }
     };
@@ -68,11 +70,34 @@ export default function CalendarPage() {
             const startDateStr = format(startOfWeek(firstDayOfMonth), 'yyyy-MM-dd');
             const endDateStr = format(endOfWeek(lastDayOfMonth), 'yyyy-MM-dd');
 
-            const [incomesRes, expensesRes, debtsRes, invoicesRes] = await Promise.all([
+            const [
+                incomesRes,
+                expensesRes,
+                debtsRes,
+                invoicesRes,
+                domainsExpiryRes,
+                domainsPurchasedRes,
+                projectsCalRes
+            ] = await Promise.all([
                 supabase.from('incomes').select('*').gte('date', startDateStr).lte('date', endDateStr),
                 supabase.from('expenses').select('*').gte('date', startDateStr).lte('date', endDateStr),
                 supabase.from('debts').select('*'), // Borçların hepsini alıp filtereleyeceğiz (vade tarihine göre)
-                supabase.from('recurring_expenses').select('*') // Faturaları da gününe göre yerleştireceğiz
+                supabase.from('recurring_expenses').select('*'), // Faturaları da gününe göre yerleştireceğiz
+                supabase
+                    .from('domains')
+                    .select('id, hostname, expires_at, annual_cost')
+                    .gte('expires_at', startDateStr)
+                    .lte('expires_at', endDateStr),
+                supabase
+                    .from('domains')
+                    .select('id, hostname, purchased_at')
+                    .gte('purchased_at', startDateStr)
+                    .lte('purchased_at', endDateStr),
+                supabase
+                    .from('projects')
+                    .select('id, title, target_end_date')
+                    .gte('target_end_date', startDateStr)
+                    .lte('target_end_date', endDateStr)
             ]);
 
             const newEvents: CalendarEvent[] = [];
@@ -98,6 +123,52 @@ export default function CalendarPage() {
                     type: 'expenses'
                 });
             });
+
+            // 2b. Domain yenileme / bitiş
+            if (!domainsExpiryRes.error && domainsExpiryRes.data) {
+                domainsExpiryRes.data.forEach((d: any) => {
+                    if (!d.expires_at) return;
+                    const cost =
+                        d.annual_cost != null && d.annual_cost !== ''
+                            ? `₺${Number(d.annual_cost).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`
+                            : 'Yenileme';
+                    newEvents.push({
+                        id: `dom-exp-${d.id}`,
+                        date: d.expires_at,
+                        title: d.hostname,
+                        amount: cost,
+                        type: 'domains'
+                    });
+                });
+            }
+
+            // 2c. Domain satın alma (yıldönümü)
+            if (!domainsPurchasedRes.error && domainsPurchasedRes.data) {
+                domainsPurchasedRes.data.forEach((d: any) => {
+                    if (!d.purchased_at) return;
+                    newEvents.push({
+                        id: `dom-buy-${d.id}`,
+                        date: d.purchased_at,
+                        title: d.hostname,
+                        amount: 'Satın alma',
+                        type: 'domains'
+                    });
+                });
+            }
+
+            // 2d. Proje hedef bitiş (takvim)
+            if (!projectsCalRes.error && projectsCalRes.data) {
+                projectsCalRes.data.forEach((p: any) => {
+                    if (!p.target_end_date) return;
+                    newEvents.push({
+                        id: `proj-${p.id}`,
+                        date: p.target_end_date,
+                        title: p.title || 'Proje',
+                        amount: 'Hedef bitiş',
+                        type: 'projects'
+                    });
+                });
+            }
 
             // 3. Borçlar (Vade Tarihine Göre)
             debtsRes.data?.forEach((item: any) => {
@@ -299,6 +370,8 @@ export default function CalendarPage() {
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500"></span> Borçlar</div>
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500"></span> Giderler</div>
                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-purple-500"></span> Vergiler</div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-teal-500"></span> Domainler</div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-indigo-500"></span> Projeler</div>
             </div>
 
             <div className="flex-1 bg-card border rounded-lg shadow-sm overflow-hidden flex flex-col">

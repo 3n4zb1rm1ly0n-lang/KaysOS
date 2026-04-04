@@ -10,6 +10,7 @@ import {
     LogOut,
     LayoutDashboard,
     FolderKanban,
+    Globe,
     Calendar,
     Landmark,
     ChevronDown,
@@ -88,6 +89,15 @@ export function MobileNav() {
                             >
                                 <FolderKanban className="w-5 h-5 shrink-0" />
                                 <span>Projeler</span>
+                            </Link>
+
+                            <Link
+                                href="/dashboard/domains"
+                                onClick={close}
+                                className={itemClass('/dashboard/domains')}
+                            >
+                                <Globe className="w-5 h-5 shrink-0" />
+                                <span>Domainler</span>
                             </Link>
 
                             <div className="pt-1">

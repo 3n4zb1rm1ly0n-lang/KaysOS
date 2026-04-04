@@ -11,6 +11,7 @@ const TABLES = [
     'debts',
     'recurring_expenses',
     'savings',
+    'domains',
     'projects',
     'ai_subscriptions',
     'categories'

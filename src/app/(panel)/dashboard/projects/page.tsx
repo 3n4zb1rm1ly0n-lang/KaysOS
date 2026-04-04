@@ -33,6 +33,7 @@ interface ProjectRow {
     notes: string | null;
     use_domain?: boolean;
     domain_detail?: string | null;
+    target_end_date?: string | null;
     use_vercel: boolean;
     vercel_detail: string | null;
     use_supabase: boolean;
@@ -110,6 +111,7 @@ const emptyProjectForm = () => ({
     notes: '',
     use_domain: false,
     domain_detail: '',
+    target_end_date: '',
     use_vercel: false,
     vercel_detail: '',
     use_supabase: false,
@@ -137,6 +139,7 @@ type ProjectSavePayload = {
     notes: string;
     use_domain: boolean;
     domain_detail: string;
+    target_end_date: string | null;
     use_vercel: boolean;
     vercel_detail: string;
     use_supabase: boolean;
@@ -156,6 +159,13 @@ function isMissingDomainColumnError(err: { message?: string; code?: string } | n
     const msg = (err?.message || '').toLowerCase();
     if (msg.includes('use_domain') || msg.includes('domain_detail')) return true;
     if (err?.code === '42703' && msg.includes('domain')) return true;
+    return false;
+}
+
+function isMissingTargetEndDateColumnError(err: { message?: string; code?: string } | null): boolean {
+    const msg = (err?.message || '').toLowerCase();
+    if (msg.includes('target_end_date')) return true;
+    if (err?.code === '42703' && msg.includes('target_end_date')) return true;
     return false;
 }
 
@@ -292,6 +302,9 @@ export default function ProjectsPage() {
             notes: p.notes || '',
             use_domain: !!p.use_domain,
             domain_detail: p.domain_detail || '',
+            target_end_date: p.target_end_date
+                ? String(p.target_end_date).slice(0, 10)
+                : '',
             use_vercel: !!p.use_vercel,
             vercel_detail: p.vercel_detail || '',
             use_supabase: !!p.use_supabase,
@@ -323,6 +336,7 @@ export default function ProjectsPage() {
             notes: projectForm.notes.trim(),
             use_domain: projectForm.use_domain,
             domain_detail: projectForm.domain_detail.trim(),
+            target_end_date: projectForm.target_end_date.trim() || null,
             use_vercel: projectForm.use_vercel,
             vercel_detail: projectForm.vercel_detail.trim(),
             use_supabase: projectForm.use_supabase,
@@ -345,20 +359,33 @@ export default function ProjectsPage() {
         };
 
         try {
-            let { error } = await runSave(payload);
+            const notices: string[] = [];
+            let body: Record<string, unknown> = { ...payload };
+            let { error } = await runSave(body as ProjectSavePayload);
 
             if (error && isMissingDomainColumnError(error)) {
-                const fallback = payloadWithoutDomainFields(payload);
-                ({ error } = await runSave(fallback));
-                if (!error) {
-                    setProjectModalOpen(false);
-                    setProjectSaveError(null);
-                    setProjectListNotice(
-                        'Domain sütunları henüz yok: kayıt domain bilgisi olmadan saklandı. Supabase’de `add_projects_domain.sql` çalıştırıp projeyi düzenleyerek domain ekleyebilirsiniz.'
-                    );
-                    await fetchProjects();
-                    return;
-                }
+                body = { ...payloadWithoutDomainFields(payload) };
+                notices.push(
+                    'Domain sütunları henüz yok: kayıt domain bilgisi olmadan saklandı. `add_projects_domain.sql` çalıştırın.'
+                );
+                ({ error } = await runSave(body as Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'>));
+            }
+
+            if (error && isMissingTargetEndDateColumnError(error)) {
+                const { target_end_date: _t, ...rest } = body;
+                body = rest;
+                notices.push(
+                    'Hedef bitiş sütunu henüz yok: tarih kaydedilmedi. `add_projects_target_end_date.sql` çalıştırın.'
+                );
+                ({ error } = await runSave(body as ProjectSavePayload));
+            }
+
+            if (!error && notices.length > 0) {
+                setProjectModalOpen(false);
+                setProjectSaveError(null);
+                setProjectListNotice(notices.join(' '));
+                await fetchProjects();
+                return;
             }
 
             if (error) {
@@ -632,6 +659,13 @@ export default function ProjectsPage() {
                                     </p>
                                 ) : null}
 
+                                {p.target_end_date ? (
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                        <span className="text-indigo-400 font-medium">Hedef bitiş:</span>
+                                        {format(new Date(p.target_end_date), 'd MMM yyyy', { locale: tr })}
+                                    </p>
+                                ) : null}
+
                                 <div className="flex flex-wrap gap-2 text-xs">
                                     {p.use_domain && (
                                         <span className="px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
@@ -895,6 +929,28 @@ export default function ProjectsPage() {
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                    Takvim: hedef bitiş tarihi (opsiyonel)
+                                </label>
+                                <input
+                                    type="date"
+                                    value={projectForm.target_end_date}
+                                    onChange={(e) =>
+                                        setProjectForm((f) => ({
+                                            ...f,
+                                            target_end_date: e.target.value
+                                        }))
+                                    }
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                                />
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                    Doluysa{' '}
+                                    <span className="text-foreground/80">Finansal Takvim</span>’de proje olarak
+                                    görünür.
+                                </p>
                             </div>
 
                             <div className="space-y-2">

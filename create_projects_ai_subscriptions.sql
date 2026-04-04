@@ -19,7 +19,8 @@ create table if not exists projects (
   github_detail text default '',
   use_gmail boolean default false,
   gmail_detail text default '',
-  accounts jsonb default '[]'::jsonb
+  accounts jsonb default '[]'::jsonb,
+  target_end_date date
 );
 
 create table if not exists ai_subscriptions (

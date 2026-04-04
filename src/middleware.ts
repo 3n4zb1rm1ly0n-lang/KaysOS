@@ -20,15 +20,12 @@ export function middleware(request: NextRequest) {
         }
     }
 
-<<<<<<< HEAD
     if (pathname.startsWith('/api/admin')) {
         if (!authCookie || authCookie.value !== 'true') {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
     }
 
-=======
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
     // Redirect / to /login if not authenticated, or /dashboard if authenticated
     if (pathname === '/') {
 
@@ -43,9 +40,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-<<<<<<< HEAD
     matcher: ['/', '/dashboard/:path*', '/login', '/api/admin/:path*'],
-=======
-    matcher: ['/', '/dashboard/:path*', '/login'],
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
 };

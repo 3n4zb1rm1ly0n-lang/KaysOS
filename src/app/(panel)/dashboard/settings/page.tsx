@@ -1,12 +1,7 @@
 'use client';
 
-<<<<<<< HEAD
 import { useState, useEffect } from 'react';
 import { FileSpreadsheet, FileText, Download, Loader2, Database, Tag, Plus, Trash2, Settings2, AlertTriangle } from 'lucide-react';
-=======
-import { useState } from 'react';
-import { FileSpreadsheet, FileText, Download, Loader2, Database, Tag, Plus, Trash2, Settings2 } from 'lucide-react';
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -28,15 +23,10 @@ export default function SettingsPage() {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [loadingCategories, setLoadingCategories] = useState(false);
 
-<<<<<<< HEAD
     const [resetModalOpen, setResetModalOpen] = useState(false);
     const [resetPassword, setResetPassword] = useState('');
     const [resetLoading, setResetLoading] = useState(false);
     const [resetMessage, setResetMessage] = useState<string | null>(null);
-=======
-    // Initial Fetch (You might want to put this in a useEffect)
-    // For now, we'll fetch on mount if needed, or when the section is opened.
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
 
     const fetchCategories = async () => {
         setLoadingCategories(true);
@@ -76,16 +66,9 @@ export default function SettingsPage() {
         }
     };
 
-<<<<<<< HEAD
     useEffect(() => {
         fetchCategories();
     }, []);
-=======
-    // Load categories on mount
-    useState(() => {
-        fetchCategories();
-    });
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
 
     const fetchAllData = async () => {
         const [incomesRes, expensesRes, debtsRes] = await Promise.all([
@@ -132,7 +115,6 @@ export default function SettingsPage() {
 
     // PDF Export function simplification for demo - robust implementation usually requires custom fonts for Turkish characters
     // Standard fonts don't support special Turkish chars perfectly, but it works for basic needs.
-<<<<<<< HEAD
     const handleResetDatabase = async (e: React.FormEvent) => {
         e.preventDefault();
         setResetMessage(null);
@@ -163,8 +145,6 @@ export default function SettingsPage() {
         }
     };
 
-=======
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
     const exportToPDF = async () => {
         setLoading(true);
         try {
@@ -372,7 +352,6 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-<<<<<<< HEAD
             <div className="border rounded-xl bg-card overflow-hidden ring-1 ring-red-500/25">
                 <div className="p-6 border-b bg-red-500/5 flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-red-500" />
@@ -455,8 +434,6 @@ export default function SettingsPage() {
                 </div>
             )}
 
-=======
->>>>>>> 8db5aab1423f0508f866588907576cd57d3b8583
             {/* Other Settings Placeholder */}
             <div className="border rounded-xl bg-card">
                 <div className="p-6 border-b">

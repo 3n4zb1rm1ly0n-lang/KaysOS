@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Syne, DM_Sans } from 'next/font/google';
-import { UserProvider } from '@auth0/nextjs-auth0/client';
 import './globals.css';
 
 const syne = Syne({
@@ -28,7 +27,7 @@ export default function RootLayout({
     return (
         <html lang="tr">
             <body className={`${syne.variable} ${dmSans.variable} font-sans antialiased`}>
-                <UserProvider>{children}</UserProvider>
+                {children}
             </body>
         </html>
     );

@@ -10,7 +10,7 @@ export function SiteFooter() {
                     © {year} Kaysia. Dijital ürünler ve web sistemleri.
                 </p>
                 <Link
-                    href="/api/auth/login?returnTo=/app/dashboard"
+                    href="/login"
                     className="text-xs text-[#4B5563] hover:text-[#9CA3AF]"
                 >
                     App

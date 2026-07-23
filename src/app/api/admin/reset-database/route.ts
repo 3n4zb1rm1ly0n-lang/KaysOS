@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSession } from '@auth0/nextjs-auth0';
+import { cookies } from 'next/headers';
 import { getServerAdminPassword } from '@/lib/admin-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
@@ -18,8 +18,9 @@ const TABLES = [
 ] as const;
 
 export async function POST(request: Request) {
-    const session = await getSession();
-    if (!session?.user) {
+    const cookieStore = cookies();
+    const auth = cookieStore.get('auth')?.value;
+    if (auth !== 'true') {
         return NextResponse.json({ error: 'Oturum gerekli.' }, { status: 401 });
     }
 

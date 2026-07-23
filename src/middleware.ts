@@ -1,53 +1,49 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSession } from '@auth0/nextjs-auth0/edge';
 
-export async function middleware(request: NextRequest) {
+/** Geçici: cookie auth (şifre). Auth0 / Supabase Auth sonra eklenecek. */
+function isAuthed(request: NextRequest): boolean {
+    return request.cookies.get('auth')?.value === 'true';
+}
+
+export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
-    const res = NextResponse.next();
 
-    // Legacy cookie auth → send to Auth0 login
+    // Login: oturum varsa panele
     if (pathname === '/login') {
-        const returnTo = request.nextUrl.searchParams.get('returnTo') || '/app/dashboard';
-        const login = new URL('/api/auth/login', request.url);
-        login.searchParams.set('returnTo', returnTo);
-        return NextResponse.redirect(login);
+        if (isAuthed(request)) {
+            return NextResponse.redirect(new URL('/app/dashboard', request.url));
+        }
+        return NextResponse.next();
     }
 
-    // Protect /app (panel) — Auth0 session required
+    // /app koruması
     if (pathname.startsWith('/app')) {
-        const session = await getSession(request, res);
-        if (!session?.user) {
-            const login = new URL('/api/auth/login', request.url);
+        if (!isAuthed(request)) {
+            const login = new URL('/login', request.url);
             login.searchParams.set('returnTo', pathname);
             return NextResponse.redirect(login);
         }
-        return res;
+        return NextResponse.next();
     }
 
-    // Protect admin API
+    // Admin API
     if (pathname.startsWith('/api/admin')) {
-        const session = await getSession(request, res);
-        if (!session?.user) {
+        if (!isAuthed(request)) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        return res;
+        return NextResponse.next();
     }
 
-    // Legacy /dashboard → /app/dashboard
+    // Eski /dashboard → /app/dashboard
     if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
         const target = pathname.replace(/^\/dashboard/, '/app/dashboard');
         return NextResponse.redirect(new URL(target, request.url));
     }
 
-    return res;
+    return NextResponse.next();
 }
 
 export const config = {
-    matcher: [
-        '/login',
-        '/app/:path*',
-        '/dashboard/:path*',
-        '/api/admin/:path*'
-    ]
+    matcher: ['/login', '/app/:path*', '/dashboard/:path*', '/api/admin/:path*']
 };

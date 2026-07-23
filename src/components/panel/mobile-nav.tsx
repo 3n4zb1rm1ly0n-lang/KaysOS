@@ -150,14 +150,17 @@ export function MobileNav() {
                                 <Settings className="w-5 h-5" />
                                 <span>Ayarlar</span>
                             </Link>
-                            <a
-                                href="/api/auth/logout"
-                                onClick={close}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    document.cookie = 'auth=; path=/; max-age=0';
+                                    window.location.href = '/';
+                                }}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20"
                             >
                                 <LogOut className="w-5 h-5" />
                                 <span>Çıkış Yap</span>
-                            </a>
+                            </button>
                         </div>
                     </div>
                 </div>

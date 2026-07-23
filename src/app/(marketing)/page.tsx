@@ -13,6 +13,7 @@ import { ContactSection } from '@/components/marketing/contact-section';
 
 async function loadShowcase(): Promise<ShowcaseProject[]> {
     try {
+        if (!supabaseUrl || !resolvePublicAnonKey()) return [];
         const client = createClient(supabaseUrl, resolvePublicAnonKey());
         const { data, error } = await client
             .from('projects')
@@ -30,6 +31,7 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
 
 async function loadSiteContent(): Promise<SiteContent> {
     try {
+        if (!supabaseUrl || !resolvePublicAnonKey()) return DEFAULT_SITE_CONTENT;
         const client = createClient(supabaseUrl, resolvePublicAnonKey());
         const { data, error } = await client
             .from('site_content')

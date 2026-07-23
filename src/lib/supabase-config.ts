@@ -1,11 +1,8 @@
-/** Ortak URL ve anon anahtar (tarayıcıda yalnızca anon; service_role asla NEXT_PUBLIC olmamalı). */
+/** Supabase public URL + anon key — yalnızca env (eski proje gömülü değil). */
 
-export const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://veyokbxkhyqaejautyva.supabase.co';
+export const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 
-/** Gömülü varsayılan: JWT içinde role=anon olmalı (tarayıcı güvenli). */
-export const embeddedAnonKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZleW9rYnhraHlxYWVqYXV0eXZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMTY2ODksImV4cCI6MjA4NTY5MjY4OX0.69XhSOD4tQnpZASl2rCngcVLfO_b68tQTI6K16S9dGY';
+export const embeddedAnonKey = '';
 
 function decodeJwtPayload(token: string): { role?: string } | null {
     try {
@@ -18,7 +15,6 @@ function decodeJwtPayload(token: string): { role?: string } | null {
         if (typeof Buffer !== 'undefined') {
             json = Buffer.from(padded, 'base64').toString('utf8');
         } else if (typeof atob === 'function') {
-            // split('') — string spread [...s] eski TS hedeflerinde downlevelIteration ister
             json = decodeURIComponent(
                 atob(padded)
                     .split('')
@@ -35,22 +31,28 @@ function decodeJwtPayload(token: string): { role?: string } | null {
 }
 
 /**
- * İstemci + SSR’de kullanılacak anahtar. Env’de yanlışlıkla service_role varsa
- * Supabase "Forbidden use of secret API key in browser" verir; bu durumda gömülü anon’a düşer.
+ * Tarayıcı / SSR anon anahtarı.
+ * Env’de service_role varsa reddeder (browser’da yasak).
  */
 export function resolvePublicAnonKey(): string {
-    const env = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-    if (!env) return embeddedAnonKey;
+    const env = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || '';
+    if (!env) return '';
     const role = decodeJwtPayload(env)?.role;
     if (role === 'service_role') {
         if (typeof console !== 'undefined' && console.warn) {
             console.warn(
-                '[KaysOS] NEXT_PUBLIC_SUPABASE_ANON_KEY bir service_role (gizli) anahtarı; tarayıcıda yasak. ' +
-                    'Supabase Dashboard → Project Settings → API → "anon" "public" anahtarını Vercel’de NEXT_PUBLIC_SUPABASE_ANON_KEY olarak kullanın. ' +
-                    'Geçici olarak gömülü anon anahtar kullanılıyor.'
+                '[Kaysia] NEXT_PUBLIC_SUPABASE_ANON_KEY service_role olamaz. Dashboard → API → anon public key kullanın.'
             );
         }
-        return embeddedAnonKey;
+        return '';
     }
     return env;
+}
+
+export function assertSupabaseConfigured(): void {
+    if (!supabaseUrl || !resolvePublicAnonKey()) {
+        throw new Error(
+            'Supabase yapılandırılmamış. .env.local içinde NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_ANON_KEY tanımlayın.'
+        );
+    }
 }

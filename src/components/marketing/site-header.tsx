@@ -35,7 +35,7 @@ export function SiteHeader() {
                         </a>
                     ))}
                     <Link
-                        href="/api/auth/login?returnTo=/app/dashboard"
+                        href="/login"
                         className="text-xs text-[#6B7280] transition-colors hover:text-[#9CA3AF]"
                     >
                         App
@@ -66,7 +66,7 @@ export function SiteHeader() {
                             </a>
                         ))}
                         <Link
-                            href="/api/auth/login?returnTo=/app/dashboard"
+                            href="/login"
                             onClick={() => setOpen(false)}
                             className="text-sm text-[#6B7280]"
                         >

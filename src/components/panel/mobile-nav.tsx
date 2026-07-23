@@ -20,7 +20,7 @@ import { FINANCE_NAV_ITEMS } from './sidebar';
 
 function pathActive(pathname: string, href: string): boolean {
     if (pathname === href) return true;
-    if (href === '/dashboard') return false;
+    if (href === '/app/dashboard') return false;
     return pathname.startsWith(href + '/');
 }
 
@@ -53,7 +53,7 @@ export function MobileNav() {
                 >
                     <Menu className="w-6 h-6" />
                 </button>
-                <span className="font-bold text-lg">KaysiOS</span>
+                <span className="font-bold text-lg">Kaysia</span>
             </div>
 
             {isOpen && (
@@ -66,7 +66,7 @@ export function MobileNav() {
 
                     <div className="relative w-[300px] h-full bg-background border-r p-6 flex flex-col animate-in slide-in-from-left duration-200">
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-bold text-white">KaysiOS</h2>
+                            <h2 className="text-xl font-bold text-white">Kaysia</h2>
                             <button
                                 onClick={close}
                                 className="p-2 -mr-2 text-muted-foreground hover:text-foreground"
@@ -77,24 +77,24 @@ export function MobileNav() {
                         </div>
 
                         <nav className="flex-1 overflow-y-auto space-y-1">
-                            <Link href="/dashboard" onClick={close} className={itemClass('/dashboard')}>
+                            <Link href="/app/dashboard" onClick={close} className={itemClass('/app/dashboard')}>
                                 <LayoutDashboard className="w-5 h-5 shrink-0" />
                                 <span>Dashboard</span>
                             </Link>
 
                             <Link
-                                href="/dashboard/projects"
+                                href="/app/dashboard/projects"
                                 onClick={close}
-                                className={itemClass('/dashboard/projects')}
+                                className={itemClass('/app/dashboard/projects')}
                             >
                                 <FolderKanban className="w-5 h-5 shrink-0" />
                                 <span>Projeler</span>
                             </Link>
 
                             <Link
-                                href="/dashboard/domains"
+                                href="/app/dashboard/domains"
                                 onClick={close}
-                                className={itemClass('/dashboard/domains')}
+                                className={itemClass('/app/dashboard/domains')}
                             >
                                 <Globe className="w-5 h-5 shrink-0" />
                                 <span>Domainler</span>
@@ -132,9 +132,9 @@ export function MobileNav() {
                             </div>
 
                             <Link
-                                href="/dashboard/calendar"
+                                href="/app/dashboard/calendar"
                                 onClick={close}
-                                className={itemClass('/dashboard/calendar')}
+                                className={itemClass('/app/dashboard/calendar')}
                             >
                                 <Calendar className="w-5 h-5 shrink-0" />
                                 <span>Takvim</span>
@@ -143,17 +143,21 @@ export function MobileNav() {
 
                         <div className="pt-6 border-t mt-auto space-y-2">
                             <Link
-                                href="/dashboard/settings"
+                                href="/app/dashboard/settings"
                                 onClick={close}
                                 className="flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg hover:bg-secondary/50 text-muted-foreground"
                             >
                                 <Settings className="w-5 h-5" />
                                 <span>Ayarlar</span>
                             </Link>
-                            <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20">
+                            <a
+                                href="/api/auth/logout"
+                                onClick={close}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20"
+                            >
                                 <LogOut className="w-5 h-5" />
                                 <span>Çıkış Yap</span>
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </div>

@@ -32,18 +32,18 @@ export interface NavLinkItem {
 
 /** Finans grubu — Projeler’in hemen altında gösterilir */
 export const FINANCE_NAV_ITEMS: NavLinkItem[] = [
-    { id: 'fin-incomes', label: 'Gelirler', href: '/dashboard/incomes', icon: TrendingUp },
-    { id: 'fin-expenses', label: 'Gider', href: '/dashboard/expenses', icon: TrendingDown },
-    { id: 'fin-debts', label: 'Borçlar', href: '/dashboard/debts', icon: CreditCard },
-    { id: 'fin-invoices', label: 'Faturalar', href: '/dashboard/invoices', icon: Receipt },
-    { id: 'fin-reports', label: 'Muhasebe', href: '/dashboard/reports', icon: FileText },
-    { id: 'fin-savings', label: 'Birikim', href: '/dashboard/savings', icon: Wallet },
-    { id: 'fin-budget', label: 'Bütçe plan', href: '/dashboard/budget', icon: PieChart }
+    { id: 'fin-incomes', label: 'Gelirler', href: '/app/dashboard/incomes', icon: TrendingUp },
+    { id: 'fin-expenses', label: 'Gider', href: '/app/dashboard/expenses', icon: TrendingDown },
+    { id: 'fin-debts', label: 'Borçlar', href: '/app/dashboard/debts', icon: CreditCard },
+    { id: 'fin-invoices', label: 'Faturalar', href: '/app/dashboard/invoices', icon: Receipt },
+    { id: 'fin-reports', label: 'Muhasebe', href: '/app/dashboard/reports', icon: FileText },
+    { id: 'fin-savings', label: 'Birikim', href: '/app/dashboard/savings', icon: Wallet },
+    { id: 'fin-budget', label: 'Bütçe plan', href: '/app/dashboard/budget', icon: PieChart }
 ];
 
 function pathActive(pathname: string, href: string): boolean {
     if (pathname === href) return true;
-    if (href === '/dashboard') return false;
+    if (href === '/app/dashboard') return false;
     return pathname.startsWith(href + '/');
 }
 
@@ -66,21 +66,22 @@ export function Sidebar() {
     return (
         <aside className="hidden md:flex w-64 border-r h-full bg-background flex-col fixed left-0 top-0 overflow-y-auto z-50">
             <div className="p-6 border-b">
-                <h1 className="text-xl font-bold text-white">KaysiOS</h1>
+                <h1 className="text-xl font-bold text-white">Kaysia</h1>
+                <p className="text-[11px] text-muted-foreground mt-0.5">App</p>
             </div>
 
             <nav className="flex-1 p-4 space-y-1">
-                <Link href="/dashboard" className={linkClass('/dashboard')}>
+                <Link href="/app/dashboard" className={linkClass('/app/dashboard')}>
                     <LayoutDashboard className="w-5 h-5 shrink-0" />
                     <span>Dashboard</span>
                 </Link>
 
-                <Link href="/dashboard/projects" className={linkClass('/dashboard/projects')}>
+                <Link href="/app/dashboard/projects" className={linkClass('/app/dashboard/projects')}>
                     <FolderKanban className="w-5 h-5 shrink-0" />
                     <span>Projeler</span>
                 </Link>
 
-                <Link href="/dashboard/domains" className={linkClass('/dashboard/domains')}>
+                <Link href="/app/dashboard/domains" className={linkClass('/app/dashboard/domains')}>
                     <Globe className="w-5 h-5 shrink-0" />
                     <span>Domainler</span>
                 </Link>
@@ -121,7 +122,7 @@ export function Sidebar() {
                     )}
                 </div>
 
-                <Link href="/dashboard/calendar" className={linkClass('/dashboard/calendar')}>
+                <Link href="/app/dashboard/calendar" className={linkClass('/app/dashboard/calendar')}>
                     <Calendar className="w-5 h-5 shrink-0" />
                     <span>Takvim</span>
                 </Link>
@@ -129,16 +130,19 @@ export function Sidebar() {
 
             <div className="p-4 border-t mt-auto">
                 <Link
-                    href="/dashboard/settings"
+                    href="/app/dashboard/settings"
                     className="flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg hover:bg-secondary/50 transition-colors mb-2 text-muted-foreground hover:text-foreground"
                 >
                     <Settings className="w-5 h-5" />
                     <span>Ayarlar</span>
                 </Link>
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors">
+                <a
+                    href="/api/auth/logout"
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                >
                     <LogOut className="w-5 h-5" />
                     <span>Çıkış Yap</span>
-                </button>
+                </a>
             </div>
         </aside>
     );

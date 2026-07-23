@@ -1,44 +1,53 @@
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getSession } from '@auth0/nextjs-auth0/edge';
 
-export function middleware(request: NextRequest) {
-    const authCookie = request.cookies.get('auth');
+export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
+    const res = NextResponse.next();
 
-    // If user is on login page and authenticated, redirect to dashboard
+    // Legacy cookie auth → send to Auth0 login
     if (pathname === '/login') {
-        if (authCookie && authCookie.value === 'true') {
-            return NextResponse.redirect(new URL('/dashboard', request.url));
-        }
+        const returnTo = request.nextUrl.searchParams.get('returnTo') || '/app/dashboard';
+        const login = new URL('/api/auth/login', request.url);
+        login.searchParams.set('returnTo', returnTo);
+        return NextResponse.redirect(login);
     }
 
-    // Protect /dashboard and all subroutes
-    if (pathname.startsWith('/dashboard')) {
-        if (!authCookie || authCookie.value !== 'true') {
-            return NextResponse.redirect(new URL('/login', request.url));
+    // Protect /app (panel) — Auth0 session required
+    if (pathname.startsWith('/app')) {
+        const session = await getSession(request, res);
+        if (!session?.user) {
+            const login = new URL('/api/auth/login', request.url);
+            login.searchParams.set('returnTo', pathname);
+            return NextResponse.redirect(login);
         }
+        return res;
     }
 
+    // Protect admin API
     if (pathname.startsWith('/api/admin')) {
-        if (!authCookie || authCookie.value !== 'true') {
+        const session = await getSession(request, res);
+        if (!session?.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+        return res;
     }
 
-    // Redirect / to /login if not authenticated, or /dashboard if authenticated
-    if (pathname === '/') {
-
-        // Check if auth cookie is valid 'true'
-        if (authCookie && authCookie.value === 'true') {
-            return NextResponse.redirect(new URL('/dashboard', request.url));
-        }
-        return NextResponse.redirect(new URL('/login', request.url));
+    // Legacy /dashboard → /app/dashboard
+    if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
+        const target = pathname.replace(/^\/dashboard/, '/app/dashboard');
+        return NextResponse.redirect(new URL(target, request.url));
     }
 
-    return NextResponse.next();
+    return res;
 }
 
 export const config = {
-    matcher: ['/', '/dashboard/:path*', '/login', '/api/admin/:path*'],
+    matcher: [
+        '/login',
+        '/app/:path*',
+        '/dashboard/:path*',
+        '/api/admin/:path*'
+    ]
 };

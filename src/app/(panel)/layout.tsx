@@ -1,9 +1,8 @@
-import { Sidebar } from "@/components/panel/sidebar";
-import { MobileNav } from "@/components/panel/mobile-nav";
-import { FloatingAssistant } from "@/components/panel/floating-assistant";
+import { Sidebar } from '@/components/panel/sidebar';
+import { MobileNav } from '@/components/panel/mobile-nav';
 
 export default function PanelLayout({
-    children,
+    children
 }: {
     children: React.ReactNode;
 }) {
@@ -14,7 +13,6 @@ export default function PanelLayout({
             <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 overflow-y-auto text-foreground bg-background">
                 {children}
             </main>
-            <FloatingAssistant />
         </div>
     );
 }

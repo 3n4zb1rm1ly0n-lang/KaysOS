@@ -265,7 +265,7 @@ export default function DashboardPage() {
                         </p>
                     </div>
                     <Link
-                        href="/dashboard/projects"
+                        href="/app/dashboard/projects"
                         className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
                     >
                         Tümünü gör
@@ -299,7 +299,7 @@ export default function DashboardPage() {
                         {!projectsError && !projectsLoading && recentProjects.length === 0 && (
                             <p className="px-6 py-8 text-sm text-muted-foreground">
                                 Henüz proje yok.{' '}
-                                <Link href="/dashboard/projects" className="text-primary font-medium hover:underline">
+                                <Link href="/app/dashboard/projects" className="text-primary font-medium hover:underline">
                                     Projeler sayfasından ekleyin
                                 </Link>
                                 .
@@ -310,7 +310,7 @@ export default function DashboardPage() {
                                 {recentProjects.map((p) => (
                                     <li key={p.id}>
                                         <Link
-                                            href="/dashboard/projects"
+                                            href="/app/dashboard/projects"
                                             className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-6 py-3 hover:bg-secondary/40 transition-colors"
                                         >
                                             <span className="font-medium text-foreground truncate pr-2">

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { syncProjectDomain } from '@/lib/project-domain-sync';
 
 type ProjectStatus =
     | 'idea'
@@ -34,6 +35,10 @@ interface ProjectRow {
     use_domain?: boolean;
     domain_detail?: string | null;
     target_end_date?: string | null;
+    showcase?: boolean;
+    showcase_summary?: string | null;
+    showcase_image?: string | null;
+    showcase_order?: number | null;
     use_vercel: boolean;
     vercel_detail: string | null;
     use_supabase: boolean;
@@ -112,6 +117,10 @@ const emptyProjectForm = () => ({
     use_domain: false,
     domain_detail: '',
     target_end_date: '',
+    showcase: false,
+    showcase_summary: '',
+    showcase_image: '',
+    showcase_order: '0',
     use_vercel: false,
     vercel_detail: '',
     use_supabase: false,
@@ -140,6 +149,10 @@ type ProjectSavePayload = {
     use_domain: boolean;
     domain_detail: string;
     target_end_date: string | null;
+    showcase: boolean;
+    showcase_summary: string;
+    showcase_image: string;
+    showcase_order: number;
     use_vercel: boolean;
     vercel_detail: string;
     use_supabase: boolean;
@@ -152,8 +165,32 @@ type ProjectSavePayload = {
     updated_at: string;
 };
 
+type ShowcaseFields = 'showcase' | 'showcase_summary' | 'showcase_image' | 'showcase_order';
+
+function isMissingShowcaseColumnError(err: { message?: string; code?: string } | null): boolean {
+    const msg = (err?.message || '').toLowerCase();
+    if (msg.includes('showcase')) return true;
+    if (err?.code === '42703' && msg.includes('showcase')) return true;
+    return false;
+}
+
+function payloadWithoutShowcase(
+    p: ProjectSavePayload
+): Omit<ProjectSavePayload, ShowcaseFields> {
+    const {
+        showcase: _a,
+        showcase_summary: _b,
+        showcase_image: _c,
+        showcase_order: _d,
+        ...rest
+    } = p;
+    return rest;
+}
+
 /** Form state = kayıt gövdesi + güncelleme zamanı (submit’te eklenir) */
-type ProjectFormState = Omit<ProjectSavePayload, 'updated_at'>;
+type ProjectFormState = Omit<ProjectSavePayload, 'updated_at' | 'showcase_order'> & {
+    showcase_order: string;
+};
 
 function isMissingDomainColumnError(err: { message?: string; code?: string } | null): boolean {
     const msg = (err?.message || '').toLowerCase();
@@ -305,6 +342,10 @@ export default function ProjectsPage() {
             target_end_date: p.target_end_date
                 ? String(p.target_end_date).slice(0, 10)
                 : '',
+            showcase: !!p.showcase,
+            showcase_summary: p.showcase_summary || '',
+            showcase_image: p.showcase_image || '',
+            showcase_order: String(p.showcase_order ?? 0),
             use_vercel: !!p.use_vercel,
             vercel_detail: p.vercel_detail || '',
             use_supabase: !!p.use_supabase,
@@ -337,6 +378,10 @@ export default function ProjectsPage() {
             use_domain: projectForm.use_domain,
             domain_detail: projectForm.domain_detail.trim(),
             target_end_date: projectForm.target_end_date.trim() || null,
+            showcase: projectForm.showcase,
+            showcase_summary: projectForm.showcase_summary.trim(),
+            showcase_image: projectForm.showcase_image.trim(),
+            showcase_order: Number.parseInt(projectForm.showcase_order, 10) || 0,
             use_vercel: projectForm.use_vercel,
             vercel_detail: projectForm.vercel_detail.trim(),
             use_supabase: projectForm.use_supabase,
@@ -351,24 +396,38 @@ export default function ProjectsPage() {
             updated_at: new Date().toISOString()
         };
 
-        const runSave = async (body: ProjectSavePayload | Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'>) => {
+        const runSave = async (
+            body:
+                | ProjectSavePayload
+                | Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'>
+                | Omit<ProjectSavePayload, ShowcaseFields>
+                | Record<string, unknown>
+        ) => {
             if (editingProjectId) {
-                return supabase.from('projects').update(body).eq('id', editingProjectId);
+                return supabase.from('projects').update(body).eq('id', editingProjectId).select('id');
             }
-            return supabase.from('projects').insert([body]);
+            return supabase.from('projects').insert([body]).select('id');
         };
 
         try {
             const notices: string[] = [];
             let body: Record<string, unknown> = { ...payload };
-            let { error } = await runSave(body as ProjectSavePayload);
+            let { data: savedRows, error } = await runSave(body as ProjectSavePayload);
+
+            if (error && isMissingShowcaseColumnError(error)) {
+                body = { ...payloadWithoutShowcase(payload) };
+                notices.push(
+                    'Vitrin sütunları henüz yok: kayıt vitrin bilgisi olmadan saklandı. `add_showcase_and_site_content.sql` çalıştırın.'
+                );
+                ({ data: savedRows, error } = await runSave(body));
+            }
 
             if (error && isMissingDomainColumnError(error)) {
-                body = { ...payloadWithoutDomainFields(payload) };
+                body = { ...payloadWithoutDomainFields(payload as ProjectSavePayload) };
                 notices.push(
                     'Domain sütunları henüz yok: kayıt domain bilgisi olmadan saklandı. `add_projects_domain.sql` çalıştırın.'
                 );
-                ({ error } = await runSave(body as Omit<ProjectSavePayload, 'use_domain' | 'domain_detail'>));
+                ({ data: savedRows, error } = await runSave(body));
             }
 
             if (error && isMissingTargetEndDateColumnError(error)) {
@@ -377,15 +436,7 @@ export default function ProjectsPage() {
                 notices.push(
                     'Hedef bitiş sütunu henüz yok: tarih kaydedilmedi. `add_projects_target_end_date.sql` çalıştırın.'
                 );
-                ({ error } = await runSave(body as ProjectSavePayload));
-            }
-
-            if (!error && notices.length > 0) {
-                setProjectModalOpen(false);
-                setProjectSaveError(null);
-                setProjectListNotice(notices.join(' '));
-                await fetchProjects();
-                return;
+                ({ data: savedRows, error } = await runSave(body));
             }
 
             if (error) {
@@ -398,8 +449,33 @@ export default function ProjectsPage() {
                 return;
             }
 
+            const projectId =
+                editingProjectId ||
+                (savedRows && savedRows[0] && (savedRows[0] as { id: string }).id) ||
+                null;
+
+            if (projectId && payload.use_domain) {
+                const sync = await syncProjectDomain({
+                    projectId,
+                    useDomain: payload.use_domain,
+                    domainDetail: payload.domain_detail
+                });
+                if (sync.error) {
+                    notices.push(`Domain senkronu: ${sync.error}`);
+                } else if (sync.synced && sync.hostname) {
+                    notices.push(`Domainler listesine eklendi/bağlandı: ${sync.hostname}`);
+                }
+            } else if (projectId && !payload.use_domain) {
+                await syncProjectDomain({
+                    projectId,
+                    useDomain: false,
+                    domainDetail: ''
+                });
+            }
+
             setProjectModalOpen(false);
             setProjectSaveError(null);
+            if (notices.length > 0) setProjectListNotice(notices.join(' '));
             await fetchProjects();
         } catch (err) {
             console.error(err);
@@ -951,6 +1027,76 @@ export default function ProjectsPage() {
                                     <span className="text-foreground/80">Finansal Takvim</span>’de proje olarak
                                     görünür.
                                 </p>
+                            </div>
+
+                            <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                                <label className="flex items-center gap-2 text-sm text-foreground">
+                                    <input
+                                        type="checkbox"
+                                        checked={projectForm.showcase}
+                                        onChange={(e) =>
+                                            setProjectForm((f) => ({
+                                                ...f,
+                                                showcase: e.target.checked
+                                            }))
+                                        }
+                                        className="rounded border-border"
+                                    />
+                                    Vitrinde göster (kaysia.co)
+                                </label>
+                                {projectForm.showcase && (
+                                    <>
+                                        <div>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                                Vitrin özeti
+                                            </label>
+                                            <textarea
+                                                rows={2}
+                                                value={projectForm.showcase_summary}
+                                                onChange={(e) =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        showcase_summary: e.target.value
+                                                    }))
+                                                }
+                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
+                                                placeholder="Kısa proje açıklaması"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                                Görsel URL (opsiyonel)
+                                            </label>
+                                            <input
+                                                value={projectForm.showcase_image}
+                                                onChange={(e) =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        showcase_image: e.target.value
+                                                    }))
+                                                }
+                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                                placeholder="https://..."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                                Sıra
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={projectForm.showcase_order}
+                                                onChange={(e) =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        showcase_order: e.target.value
+                                                    }))
+                                                }
+                                                className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <div className="space-y-2">

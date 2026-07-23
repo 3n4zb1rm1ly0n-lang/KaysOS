@@ -150,6 +150,19 @@ export default function DomainsPage() {
                 const { error } = await supabase.from('domains').insert([body]);
                 if (error) throw error;
             }
+
+            // Keep linked project domain fields in sync
+            if (body.project_id) {
+                await supabase
+                    .from('projects')
+                    .update({
+                        use_domain: true,
+                        domain_detail: host,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', body.project_id);
+            }
+
             setModalOpen(false);
             setEditingId(null);
             setForm(emptyForm());
@@ -185,11 +198,12 @@ export default function DomainsPage() {
                         Domainler
                     </h2>
                     <p className="text-muted-foreground mt-1">
-                        Satın alma ve yenileme tarihlerini takip edin; kayıtlar{' '}
-                        <Link href="/dashboard/calendar" className="text-primary hover:underline">
+                        Satın alma ve yenileme tarihlerini takip edin. Projeden domain eklendiğinde burada
+                        da görünür; kayıtlar{' '}
+                        <Link href="/app/dashboard/calendar" className="text-primary hover:underline">
                             Finansal Takvim
                         </Link>
-                        ’de görünür.
+                        ’de listelenir.
                     </p>
                 </div>
                 <button

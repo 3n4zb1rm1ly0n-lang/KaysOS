@@ -1,22 +1,35 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Syne, DM_Sans } from 'next/font/google';
+import { UserProvider } from '@auth0/nextjs-auth0/client';
+import './globals.css';
 
-const inter = Inter({ subsets: ["latin"] });
+const syne = Syne({
+    subsets: ['latin'],
+    variable: '--font-display',
+    display: 'swap'
+});
+
+const dmSans = DM_Sans({
+    subsets: ['latin'],
+    variable: '--font-sans',
+    display: 'swap'
+});
 
 export const metadata: Metadata = {
-    title: "KaysOS Dashboard",
-    description: "Admin Dashboard",
+    title: 'Kaysia',
+    description: 'Dijital ürünler ve web sistemleri'
 };
 
 export default function RootLayout({
-    children,
+    children
 }: Readonly<{
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
-            <body className={inter.className}>{children}</body>
+        <html lang="tr">
+            <body className={`${syne.variable} ${dmSans.variable} font-sans antialiased`}>
+                <UserProvider>{children}</UserProvider>
+            </body>
         </html>
     );
 }

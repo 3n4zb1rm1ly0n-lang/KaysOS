@@ -4,17 +4,10 @@ import { getServerAdminPassword } from '@/lib/admin-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 const TABLES = [
-    'audit_logs',
-    'tax_entries',
-    'incomes',
-    'expenses',
-    'debts',
-    'recurring_expenses',
-    'savings',
+    'company_finance_calc_lines',
     'domains',
     'projects',
-    'ai_subscriptions',
-    'categories'
+    'ai_subscriptions'
 ] as const;
 
 export async function POST(request: Request) {

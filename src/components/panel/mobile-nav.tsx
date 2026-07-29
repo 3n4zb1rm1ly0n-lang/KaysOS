@@ -12,11 +12,11 @@ import {
     FolderKanban,
     Globe,
     Calendar,
-    Landmark,
+    Building2,
     ChevronDown,
     ChevronRight
 } from 'lucide-react';
-import { FINANCE_NAV_ITEMS } from './sidebar';
+import { COMPANY_FINANCE_NAV_ITEMS } from './sidebar';
 
 function pathActive(pathname: string, href: string): boolean {
     if (pathname === href) return true;
@@ -27,12 +27,14 @@ function pathActive(pathname: string, href: string): boolean {
 export function MobileNav() {
     const [isOpen, setIsOpen] = useState(false);
     const pathname = usePathname();
-    const financeSectionActive = FINANCE_NAV_ITEMS.some((item) => pathActive(pathname, item.href));
-    const [financeOpen, setFinanceOpen] = useState(financeSectionActive);
+    const companyFinanceActive = COMPANY_FINANCE_NAV_ITEMS.some((item) =>
+        pathActive(pathname, item.href)
+    );
+    const [companyFinanceOpen, setCompanyFinanceOpen] = useState(companyFinanceActive);
 
     useEffect(() => {
-        if (financeSectionActive) setFinanceOpen(true);
-    }, [financeSectionActive]);
+        if (companyFinanceActive) setCompanyFinanceOpen(true);
+    }, [companyFinanceActive]);
 
     const close = () => setIsOpen(false);
 
@@ -103,20 +105,20 @@ export function MobileNav() {
                             <div className="pt-1">
                                 <button
                                     type="button"
-                                    onClick={() => setFinanceOpen((o) => !o)}
+                                    onClick={() => setCompanyFinanceOpen((o) => !o)}
                                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg text-left text-muted-foreground hover:bg-secondary/50"
                                 >
-                                    <Landmark className="w-5 h-5 shrink-0" />
-                                    <span className="flex-1">Finans</span>
-                                    {financeOpen ? (
+                                    <Building2 className="w-5 h-5 shrink-0" />
+                                    <span className="flex-1">Şirket Finans</span>
+                                    {companyFinanceOpen ? (
                                         <ChevronDown className="w-4 h-4 opacity-70" />
                                     ) : (
                                         <ChevronRight className="w-4 h-4 opacity-70" />
                                     )}
                                 </button>
-                                {financeOpen && (
+                                {companyFinanceOpen && (
                                     <div className="mt-1 ml-2 pl-3 border-l border-border/80 space-y-0.5">
-                                        {FINANCE_NAV_ITEMS.map((item) => (
+                                        {COMPANY_FINANCE_NAV_ITEMS.map((item) => (
                                             <Link
                                                 key={item.id}
                                                 href={item.href}

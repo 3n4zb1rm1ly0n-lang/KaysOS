@@ -6,18 +6,12 @@ import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
     Settings,
-    TrendingDown,
-    TrendingUp,
-    CreditCard,
     LogOut,
     Calendar,
-    Receipt,
-    Wallet,
-    FileText,
-    PieChart,
     FolderKanban,
     Globe,
-    Landmark,
+    Building2,
+    Calculator,
     ChevronDown,
     ChevronRight
 } from 'lucide-react';
@@ -30,15 +24,14 @@ export interface NavLinkItem {
     icon: LucideIcon;
 }
 
-/** Finans grubu — Projeler’in hemen altında gösterilir */
-export const FINANCE_NAV_ITEMS: NavLinkItem[] = [
-    { id: 'fin-incomes', label: 'Gelirler', href: '/app/dashboard/incomes', icon: TrendingUp },
-    { id: 'fin-expenses', label: 'Gider', href: '/app/dashboard/expenses', icon: TrendingDown },
-    { id: 'fin-debts', label: 'Borçlar', href: '/app/dashboard/debts', icon: CreditCard },
-    { id: 'fin-invoices', label: 'Faturalar', href: '/app/dashboard/invoices', icon: Receipt },
-    { id: 'fin-reports', label: 'Muhasebe', href: '/app/dashboard/reports', icon: FileText },
-    { id: 'fin-savings', label: 'Birikim', href: '/app/dashboard/savings', icon: Wallet },
-    { id: 'fin-budget', label: 'Bütçe plan', href: '/app/dashboard/budget', icon: PieChart }
+/** Şirket Finans grubu */
+export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
+    {
+        id: 'cf-calculator',
+        label: 'Hesaplama',
+        href: '/app/dashboard/company-finance/calculator',
+        icon: Calculator
+    }
 ];
 
 function pathActive(pathname: string, href: string): boolean {
@@ -49,12 +42,14 @@ function pathActive(pathname: string, href: string): boolean {
 
 export function Sidebar() {
     const pathname = usePathname();
-    const financeSectionActive = FINANCE_NAV_ITEMS.some((item) => pathActive(pathname, item.href));
-    const [financeOpen, setFinanceOpen] = useState(financeSectionActive);
+    const companyFinanceActive = COMPANY_FINANCE_NAV_ITEMS.some((item) =>
+        pathActive(pathname, item.href)
+    );
+    const [companyFinanceOpen, setCompanyFinanceOpen] = useState(companyFinanceActive);
 
     useEffect(() => {
-        if (financeSectionActive) setFinanceOpen(true);
-    }, [financeSectionActive]);
+        if (companyFinanceActive) setCompanyFinanceOpen(true);
+    }, [companyFinanceActive]);
 
     const linkClass = (href: string) =>
         `flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
@@ -89,26 +84,26 @@ export function Sidebar() {
                 <div className="pt-1">
                     <button
                         type="button"
-                        onClick={() => setFinanceOpen((o) => !o)}
+                        onClick={() => setCompanyFinanceOpen((o) => !o)}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors text-left ${
-                            financeSectionActive && !financeOpen
+                            companyFinanceActive && !companyFinanceOpen
                                 ? 'bg-primary/10 text-primary'
                                 : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                         }`}
-                        aria-expanded={financeOpen}
+                        aria-expanded={companyFinanceOpen}
                     >
-                        <Landmark className="w-5 h-5 shrink-0" />
-                        <span className="flex-1">Finans</span>
-                        {financeOpen ? (
+                        <Building2 className="w-5 h-5 shrink-0" />
+                        <span className="flex-1">Şirket Finans</span>
+                        {companyFinanceOpen ? (
                             <ChevronDown className="w-4 h-4 shrink-0 opacity-70" />
                         ) : (
                             <ChevronRight className="w-4 h-4 shrink-0 opacity-70" />
                         )}
                     </button>
 
-                    {financeOpen && (
+                    {companyFinanceOpen && (
                         <div className="mt-1 ml-2 pl-3 border-l border-border/80 space-y-0.5">
-                            {FINANCE_NAV_ITEMS.map((item) => (
+                            {COMPANY_FINANCE_NAV_ITEMS.map((item) => (
                                 <Link
                                     key={item.id}
                                     href={item.href}

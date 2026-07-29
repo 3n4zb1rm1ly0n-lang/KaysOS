@@ -37,8 +37,9 @@ ADMIN_PASSWORD=141592
 
 1. Dashboard → **SQL Editor** → New query.
 2. [`supabase_setup.sql`](supabase_setup.sql) dosyasının **tamamını** yapıştırıp **Run** (yeni proje).
-3. Mevcut projeye ek alanlar için ayrıca [`add_showcase_logo_and_links.sql`](add_showcase_logo_and_links.sql) çalıştırın.
+3. Mevcut projeye ek alanlar + görsel yükleme için [`add_showcase_logo_and_links.sql`](add_showcase_logo_and_links.sql) çalıştırın (sütunlar + `project-assets` Storage bucket).
 4. **Table Editor**’da `projects` içinde `logo_url`, `showcase_body`, `showcase_links` görünmeli.
+5. **Storage** → `project-assets` bucket’ı public olmalı.
 
 ## 5. Doğrulama
 

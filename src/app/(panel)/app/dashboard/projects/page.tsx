@@ -13,6 +13,7 @@ import {
 import { format, differenceInDays, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { syncProjectDomain } from '@/lib/project-domain-sync';
+import { ImageUploadField } from '@/components/panel/image-upload-field';
 
 type ProjectStatus =
     | 'idea'
@@ -1096,25 +1097,15 @@ export default function ProjectsPage() {
                                 </label>
                                 {projectForm.showcase && (
                                     <>
-                                        <div>
-                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                                Logo URL
-                                            </label>
-                                            <input
-                                                value={projectForm.logo_url}
-                                                onChange={(e) =>
-                                                    setProjectForm((f) => ({
-                                                        ...f,
-                                                        logo_url: e.target.value
-                                                    }))
-                                                }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                                                placeholder="https://…/logo.png"
-                                            />
-                                            <p className="text-[11px] text-muted-foreground mt-1">
-                                                Kare vitrin ve kartlarda kullanılır. Kare PNG/SVG önerilir.
-                                            </p>
-                                        </div>
+                                        <ImageUploadField
+                                            label="Logo"
+                                            folder="logos"
+                                            value={projectForm.logo_url}
+                                            onChange={(url) =>
+                                                setProjectForm((f) => ({ ...f, logo_url: url }))
+                                            }
+                                            hint="İzo kareler ve kartlarda kullanılır. Kare PNG/SVG önerilir."
+                                        />
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">
                                                 Kart özeti (kısa)
@@ -1149,22 +1140,18 @@ export default function ProjectsPage() {
                                                 placeholder="Tıklanınca açılan detay metni"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                                Kapak görseli URL (opsiyonel)
-                                            </label>
-                                            <input
-                                                value={projectForm.showcase_image}
-                                                onChange={(e) =>
-                                                    setProjectForm((f) => ({
-                                                        ...f,
-                                                        showcase_image: e.target.value
-                                                    }))
-                                                }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                                                placeholder="https://..."
-                                            />
-                                        </div>
+                                        <ImageUploadField
+                                            label="Kapak görseli (opsiyonel)"
+                                            folder="covers"
+                                            value={projectForm.showcase_image}
+                                            onChange={(url) =>
+                                                setProjectForm((f) => ({
+                                                    ...f,
+                                                    showcase_image: url
+                                                }))
+                                            }
+                                            hint="İleride kart/modal kapak için. Şimdilik opsiyonel."
+                                        />
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">
                                                 Vitrin sırası

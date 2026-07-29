@@ -1,5 +1,6 @@
 import type { ShowcaseProject } from '@/lib/marketing-types';
 import { extractHostname } from '@/lib/hostname';
+import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
 
 export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
     return (
@@ -14,13 +15,19 @@ export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
                 <p className="mt-4 max-w-xl text-[#9CA3AF]">
                     Panelden vitrine taşıdığımız güncel çalışmalar.
                 </p>
+            </div>
 
+            <div className="mt-10 md:mt-14">
+                <EcosystemIso />
+            </div>
+
+            <div className="mx-auto max-w-6xl px-5 md:px-8">
                 {projects.length === 0 ? (
-                    <p className="mt-16 text-sm text-[#6B7280]">
+                    <p className="mt-10 text-sm text-[#6B7280] md:mt-6">
                         Yakında burada seçilmiş projeler görünecek.
                     </p>
                 ) : (
-                    <ul className="mt-14 divide-y divide-white/10">
+                    <ul className="mt-10 divide-y divide-white/10 md:mt-6">
                         {projects.map((p, i) => {
                             const host =
                                 p.use_domain && p.domain_detail

@@ -1,7 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabaseUrl, resolvePublicAnonKey } from '@/lib/supabase-config';
 
-const url = supabaseUrl || 'https://placeholder.supabase.co';
-const key = resolvePublicAnonKey() || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjAsImV4cCI6MH0.placeholder';
+const url = supabaseUrl;
+const key = resolvePublicAnonKey();
 
-export const supabase = createClient(url, key);
+if (!url || !key) {
+    if (typeof console !== 'undefined' && console.error) {
+        console.error(
+            '[Kaysia] Supabase env eksik. NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_ANON_KEY tanımlı olmalı (Vercel’de kaydettikten sonra Redeploy).'
+        );
+    }
+}
+
+export const supabase = createClient(
+    url || 'https://placeholder.supabase.co',
+    key || 'missing-anon-key'
+);

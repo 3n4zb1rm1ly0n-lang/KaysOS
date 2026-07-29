@@ -37,11 +37,25 @@ function decodeJwtPayload(token: string): { role?: string } | null {
 export function resolvePublicAnonKey(): string {
     const env = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || '';
     if (!env) return '';
+
+    // Yeni publishable key (sb_publishable_...) — JWT değil, olduğu gibi kullanılır
+    if (env.startsWith('sb_publishable_')) return env;
+
+    // Secret / service_role tarayıcıda yasak
+    if (env.startsWith('sb_secret_')) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn(
+                '[Kaysia] NEXT_PUBLIC_SUPABASE_ANON_KEY sb_secret olamaz. sb_publishable veya legacy anon JWT kullanın.'
+            );
+        }
+        return '';
+    }
+
     const role = decodeJwtPayload(env)?.role;
     if (role === 'service_role') {
         if (typeof console !== 'undefined' && console.warn) {
             console.warn(
-                '[Kaysia] NEXT_PUBLIC_SUPABASE_ANON_KEY service_role olamaz. Dashboard → API → anon public key kullanın.'
+                '[Kaysia] NEXT_PUBLIC_SUPABASE_ANON_KEY service_role olamaz. Dashboard → API → anon public / publishable key kullanın.'
             );
         }
         return '';

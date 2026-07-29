@@ -100,7 +100,276 @@ body {
   .marketing-fade-up-delay-2,
   .marketing-fade-up-delay-3,
   .marketing-orb,
-  .marketing-orb-delayed {
-    animation: none;
+  .marketing-orb-delayed,
+  .ecosystem-iso-plane,
+  .ecosystem-iso-tile {
+    animation: none !important;
+  }
+}
+
+/* —— Isometric tech ecosystem (İşler) —— */
+.ecosystem-stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ecosystem-iso-scene {
+  position: relative;
+  height: 460px;
+  width: min(100vw, 1920px);
+  overflow: hidden;
+  isolation: isolate;
+  contain: layout paint;
+}
+
+.ecosystem-iso-scene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(26, 155, 142, 0.18), transparent 42%),
+    radial-gradient(circle at 50% 68%, rgba(42, 111, 219, 0.1), transparent 48%);
+}
+
+.ecosystem-iso-plane {
+  --plane-perspective: 1320px;
+  --plane-rotate-x: 50deg;
+  --plane-rotate-z: 0deg;
+  --plane-translate-x: -50%;
+  --plane-translate-y: -8%;
+  --plane-float-y: -5%;
+  --plane-float-z: 16px;
+  position: absolute;
+  top: -80px;
+  left: 50%;
+  z-index: 1;
+  width: 1220px;
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--plane-perspective))
+    rotateX(var(--plane-rotate-x))
+    rotateZ(var(--plane-rotate-z))
+    translate3d(var(--plane-translate-x), var(--plane-translate-y), 0);
+  animation: ecosystemPlaneFloat 9s ease-in-out infinite;
+  will-change: transform;
+}
+
+.ecosystem-iso-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 120px);
+  grid-auto-rows: 120px;
+  gap: 26px;
+  transform-style: preserve-3d;
+}
+
+.ecosystem-iso-tile {
+  --tile-hover-y: 0px;
+  --tile-hover-z: 0px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+  border-radius: 28px;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #f4f6f8;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 14px 28px rgba(0, 0, 0, 0.22),
+    0 34px 56px rgba(26, 155, 142, 0.08);
+  animation: ecosystemTileFloat 5.4s ease-in-out infinite;
+  animation-delay: var(--tile-delay);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  overflow: visible;
+}
+
+.ecosystem-iso-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  transform: translate3d(8px, 11px, -18px);
+  background: rgba(0, 0, 0, 0.35);
+  filter: blur(0.2px);
+}
+
+.ecosystem-iso-tile::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 27px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.12) inset;
+}
+
+.ecosystem-iso-tile:hover {
+  --tile-hover-y: -6px;
+  --tile-hover-z: 34px;
+}
+
+.ecosystem-iso-tile--empty {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 12px 24px rgba(0, 0, 0, 0.12);
+}
+
+.ecosystem-iso-tile--empty::before {
+  background: rgba(26, 155, 142, 0.06);
+}
+
+.ecosystem-iso-tile--dark {
+  background: #12161c;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.ecosystem-iso-tile--brand {
+  background: linear-gradient(145deg, #1a9b8e 0%, #127a70 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 14px 28px rgba(0, 0, 0, 0.28),
+    0 38px 72px rgba(26, 155, 142, 0.28);
+}
+
+.ecosystem-iso-tile img {
+  width: 52%;
+  height: 52%;
+  display: block;
+  object-fit: contain;
+  border-radius: 0;
+  transform: translateZ(12px);
+  backface-visibility: hidden;
+}
+
+.ecosystem-iso-tile--dark img {
+  width: 46%;
+  height: 46%;
+}
+
+.ecosystem-iso-tile--crop img {
+  transform: translateZ(12px) scale(1.12);
+}
+
+.ecosystem-iso-mark {
+  position: relative;
+  display: inline-flex;
+  color: #fff;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 0.82;
+  letter-spacing: -4px;
+  transform: translate3d(0, -2px, 18px);
+  text-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+}
+
+.ecosystem-iso-mark span {
+  width: 12px;
+  height: 12px;
+  position: absolute;
+  right: -8px;
+  top: 18px;
+  border-radius: 999px;
+  background: #e8eaed;
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes ecosystemPlaneFloat {
+  0%,
+  100% {
+    transform:
+      perspective(var(--plane-perspective))
+      rotateX(var(--plane-rotate-x))
+      rotateZ(var(--plane-rotate-z))
+      translate3d(var(--plane-translate-x), var(--plane-translate-y), 0);
+  }
+  50% {
+    transform:
+      perspective(var(--plane-perspective))
+      rotateX(var(--plane-rotate-x))
+      rotateZ(var(--plane-rotate-z))
+      translate3d(var(--plane-translate-x), var(--plane-float-y), var(--plane-float-z));
+  }
+}
+
+@keyframes ecosystemTileFloat {
+  0%,
+  100% {
+    transform: translate3d(0, var(--tile-hover-y), var(--tile-hover-z));
+  }
+  50% {
+    transform: translate3d(0, calc(-4px + var(--tile-hover-y)), calc(18px + var(--tile-hover-z)));
+  }
+}
+
+@media (max-width: 980px) {
+  .ecosystem-iso-scene {
+    height: 400px;
+  }
+
+  .ecosystem-iso-plane {
+    --plane-perspective: 1240px;
+    --plane-rotate-x: 55deg;
+    --plane-translate-y: -4%;
+    top: -24px;
+    width: 1030px;
+  }
+
+  .ecosystem-iso-grid {
+    grid-template-columns: repeat(8, 104px);
+    grid-auto-rows: 104px;
+    gap: 22px;
+  }
+
+  .ecosystem-iso-tile {
+    width: 104px;
+    height: 104px;
+    border-radius: 24px;
+  }
+
+  .ecosystem-iso-mark {
+    font-size: 52px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ecosystem-iso-scene {
+    height: 320px;
+  }
+
+  .ecosystem-iso-plane {
+    --plane-rotate-x: 58deg;
+    --plane-translate-y: 2%;
+    top: -10px;
+    width: 860px;
+  }
+
+  .ecosystem-iso-grid {
+    grid-template-columns: repeat(8, 88px);
+    grid-auto-rows: 88px;
+    gap: 16px;
+  }
+
+  .ecosystem-iso-tile {
+    width: 88px;
+    height: 88px;
+    border-radius: 20px;
+  }
+
+  .ecosystem-iso-mark {
+    font-size: 42px;
   }
 }

@@ -12,6 +12,7 @@ import {
     Globe,
     Building2,
     Calculator,
+    Blocks,
     ChevronDown,
     ChevronRight
 } from 'lucide-react';
@@ -79,6 +80,11 @@ export function Sidebar() {
                 <Link href="/app/dashboard/domains" className={linkClass('/app/dashboard/domains')}>
                     <Globe className="w-5 h-5 shrink-0" />
                     <span>Domainler</span>
+                </Link>
+
+                <Link href="/app/dashboard/ecosystem" className={linkClass('/app/dashboard/ecosystem')}>
+                    <Blocks className="w-5 h-5 shrink-0" />
+                    <span>Ekosistem</span>
                 </Link>
 
                 <div className="pt-1">

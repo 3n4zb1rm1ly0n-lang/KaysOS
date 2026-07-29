@@ -5,6 +5,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 const TABLES = [
     'company_finance_calc_lines',
+    'ecosystem_items',
     'domains',
     'projects',
     'ai_subscriptions'

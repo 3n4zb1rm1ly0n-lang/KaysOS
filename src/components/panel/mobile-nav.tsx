@@ -13,6 +13,7 @@ import {
     Globe,
     Calendar,
     Building2,
+    Blocks,
     ChevronDown,
     ChevronRight
 } from 'lucide-react';
@@ -100,6 +101,15 @@ export function MobileNav() {
                             >
                                 <Globe className="w-5 h-5 shrink-0" />
                                 <span>Domainler</span>
+                            </Link>
+
+                            <Link
+                                href="/app/dashboard/ecosystem"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/ecosystem')}
+                            >
+                                <Blocks className="w-5 h-5 shrink-0" />
+                                <span>Ekosistem</span>
                             </Link>
 
                             <div className="pt-1">

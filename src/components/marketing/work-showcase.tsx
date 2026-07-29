@@ -4,6 +4,8 @@ import { useEffect, useId, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import type { ShowcaseProject } from '@/lib/marketing-types';
 import { parseShowcaseLinks } from '@/lib/marketing-types';
+import type { EcosystemItem } from '@/lib/ecosystem-types';
+import { ECOSYSTEM_KIND_LABELS, parseEcosystemLinks } from '@/lib/ecosystem-types';
 import { extractHostname } from '@/lib/hostname';
 import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
 
@@ -15,16 +17,24 @@ function siteUrl(p: ShowcaseProject): string | null {
     return null;
 }
 
-function ProjectModal({
-    project,
+function DetailModal({
+    title,
+    summary,
+    body,
+    logoUrl,
+    links,
+    badge,
     onClose
 }: {
-    project: ShowcaseProject;
+    title: string;
+    summary?: string | null;
+    body?: string | null;
+    logoUrl?: string | null;
+    links: { label: string; url: string }[];
+    badge?: string;
     onClose: () => void;
 }) {
     const titleId = useId();
-    const links = parseShowcaseLinks(project.showcase_links);
-    const primary = siteUrl(project);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -55,25 +65,28 @@ function ProjectModal({
             <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0F1419] shadow-2xl sm:rounded-2xl">
                 <div className="flex items-start gap-4 border-b border-white/10 px-5 py-4">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/10">
-                        {project.logo_url ? (
+                        {logoUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                                src={project.logo_url}
-                                alt=""
-                                className="h-10 w-10 object-contain"
-                            />
+                            <img src={logoUrl} alt="" className="h-10 w-10 object-contain" />
                         ) : (
                             <span className="font-display text-lg text-[#1A9B8E]">
-                                {project.title.slice(0, 1)}
+                                {title.slice(0, 1)}
                             </span>
                         )}
                     </div>
                     <div className="min-w-0 flex-1 pt-1">
-                        <h3 id={titleId} className="font-display text-xl text-white">
-                            {project.title}
-                        </h3>
-                        {project.showcase_summary && (
-                            <p className="mt-1 text-sm text-[#9CA3AF]">{project.showcase_summary}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 id={titleId} className="font-display text-xl text-white">
+                                {title}
+                            </h3>
+                            {badge && (
+                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-white/15 text-[#9CA3AF]">
+                                    {badge}
+                                </span>
+                            )}
+                        </div>
+                        {summary && (
+                            <p className="mt-1 text-sm text-[#9CA3AF]">{summary}</p>
                         )}
                     </div>
                     <button
@@ -87,33 +100,20 @@ function ProjectModal({
                 </div>
 
                 <div className="overflow-y-auto px-5 py-5 space-y-5">
-                    {project.showcase_body ? (
+                    {body ? (
                         <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB]">
-                            {project.showcase_body}
+                            {body}
                         </p>
                     ) : (
                         <p className="text-sm text-[#6B7280]">Detaylı açıklama henüz eklenmedi.</p>
                     )}
 
-                    {(primary || links.length > 0) && (
+                    {links.length > 0 && (
                         <div className="space-y-2">
                             <p className="text-xs font-medium uppercase tracking-wider text-[#6B7280]">
                                 Bağlantılar
                             </p>
                             <ul className="space-y-2">
-                                {primary && (
-                                    <li>
-                                        <a
-                                            href={primary}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[#E8EAED] transition hover:border-[#1A9B8E]/40 hover:text-white"
-                                        >
-                                            Siteyi aç
-                                            <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-                                        </a>
-                                    </li>
-                                )}
                                 {links.map((l) => (
                                     <li key={`${l.label}-${l.url}`}>
                                         <a
@@ -136,25 +136,58 @@ function ProjectModal({
     );
 }
 
-export function WorkShowcase({ projects }: { projects: ShowcaseProject[] }) {
-    const [activeId, setActiveId] = useState<string | null>(null);
-    const active = projects.find((p) => p.id === activeId) ?? null;
+export function WorkShowcase({
+    projects,
+    ecosystem
+}: {
+    projects: ShowcaseProject[];
+    ecosystem: EcosystemItem[];
+}) {
+    const [ecoId, setEcoId] = useState<string | null>(null);
+    const [projectId, setProjectId] = useState<string | null>(null);
+
+    const ecoActive = ecosystem.find((i) => i.id === ecoId) ?? null;
+    const projectActive = projects.find((p) => p.id === projectId) ?? null;
+
+    const projectLinks = projectActive
+        ? [
+              ...(siteUrl(projectActive)
+                  ? [{ label: 'Siteyi aç', url: siteUrl(projectActive)! }]
+                  : []),
+              ...parseShowcaseLinks(projectActive.showcase_links)
+          ]
+        : [];
 
     return (
         <>
-            <EcosystemIso projects={projects} onSelectProject={setActiveId} />
+            <div className="mx-auto max-w-6xl px-5 md:px-8 mb-2">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]/90">
+                    Teknolojiler & partnerlikler
+                </p>
+            </div>
+
+            <EcosystemIso items={ecosystem} onSelectItem={setEcoId} />
+
+            <div className="mx-auto max-w-6xl px-5 md:px-8 mt-14 md:mt-16">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]">
+                    Projeler
+                </p>
+                <h3 className="font-display mt-3 text-2xl text-white md:text-3xl">
+                    Seçilmiş işler
+                </h3>
+            </div>
 
             {projects.length === 0 ? (
-                <p className="mx-auto mt-10 max-w-6xl px-5 text-sm text-[#6B7280] md:mt-8 md:px-8">
+                <p className="mx-auto mt-8 max-w-6xl px-5 text-sm text-[#6B7280] md:px-8">
                     Yakında burada seçilmiş projeler görünecek.
                 </p>
             ) : (
-                <ul className="mx-auto mt-10 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 md:mt-8 md:gap-5 md:px-8 lg:grid-cols-3">
+                <ul className="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 md:gap-5 md:px-8 lg:grid-cols-3">
                     {projects.map((p) => (
                         <li key={p.id}>
                             <button
                                 type="button"
-                                onClick={() => setActiveId(p.id)}
+                                onClick={() => setProjectId(p.id)}
                                 className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12171E] text-left transition hover:border-[#1A9B8E]/40 hover:bg-[#161C24]"
                             >
                                 <div className="flex aspect-[16/10] items-center justify-center bg-gradient-to-b from-white/[0.06] to-transparent p-8">
@@ -190,7 +223,29 @@ export function WorkShowcase({ projects }: { projects: ShowcaseProject[] }) {
                 </ul>
             )}
 
-            {active && <ProjectModal project={active} onClose={() => setActiveId(null)} />}
+            {ecoActive && (
+                <DetailModal
+                    title={ecoActive.name}
+                    summary={ecoActive.summary}
+                    body={ecoActive.body}
+                    logoUrl={ecoActive.logo_url}
+                    links={parseEcosystemLinks(ecoActive.links)}
+                    badge={ECOSYSTEM_KIND_LABELS[ecoActive.kind]}
+                    onClose={() => setEcoId(null)}
+                />
+            )}
+
+            {projectActive && (
+                <DetailModal
+                    title={projectActive.title}
+                    summary={projectActive.showcase_summary}
+                    body={projectActive.showcase_body}
+                    logoUrl={projectActive.logo_url}
+                    links={projectLinks}
+                    badge="Proje"
+                    onClose={() => setProjectId(null)}
+                />
+            )}
         </>
     );
 }

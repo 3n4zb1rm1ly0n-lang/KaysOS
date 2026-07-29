@@ -54,3 +54,9 @@ Konsolda `placeholder.supabase.co` veya JWT/role hatası görürseniz URL/anon k
 - Panel girişi cookie + admin şifresi; Supabase Auth kullanılmıyor.
 - RLS açık politikalarla (anon CRUD) — erişim panelle sınırlı (geliştirme modeli).
 - Eski finans tabloları (`incomes`, `expenses`, `debts`, …) bu scriptte yok.
+
+## Ekosistem (teknoloji & partner)
+
+SQL Editor’da [`create_ecosystem_items.sql`](create_ecosystem_items.sql) çalıştırın — tablo + 8 örnek (Next.js, React, TypeScript, Supabase, Vercel, Google, GitHub, Tailwind).
+
+Panel menüsü **Ekosistem**: ekle/düzenle, logo yükle, detay + linkler, sitede göster.

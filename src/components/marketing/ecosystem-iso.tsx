@@ -1,8 +1,9 @@
 'use client';
 
-import type { ShowcaseProject } from '@/lib/marketing-types';
+import type { EcosystemItem } from '@/lib/ecosystem-types';
+import { normalizeTileTone } from '@/lib/ecosystem-types';
 
-/** Fixed staggered pattern: null = empty, 0 = brand center, >0 = project slot order */
+/** Fixed staggered pattern: null = empty, 0 = brand center, >0 = item slot order */
 const GRID: (number | null)[] = [
     null, 1, null, 2, null, 3, null, 4,
     5, null, 6, null, 0, null, 7, null,
@@ -14,12 +15,12 @@ const GRID: (number | null)[] = [
 
 type TileProps = {
     index: number;
-    kind: 'empty' | 'brand' | 'project';
-    project?: ShowcaseProject;
+    kind: 'empty' | 'brand' | 'item';
+    item?: EcosystemItem;
     onSelect?: (id: string) => void;
 };
 
-function Tile({ index, kind, project, onSelect }: TileProps) {
+function Tile({ index, kind, item, onSelect }: TileProps) {
     const delay = `${(index % 11) * -0.28}s`;
 
     if (kind === 'empty') {
@@ -45,27 +46,30 @@ function Tile({ index, kind, project, onSelect }: TileProps) {
         );
     }
 
-    const tone = 'ecosystem-iso-tile--light';
+    const tone =
+        normalizeTileTone(item?.tile_tone) === 'dark'
+            ? 'ecosystem-iso-tile--dark'
+            : 'ecosystem-iso-tile--light';
 
-    const interactive = Boolean(project && onSelect);
+    const interactive = Boolean(item && onSelect);
 
-    const inner = project?.logo_url ? (
+    const inner = item?.logo_url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={project.logo_url} alt={project.title} loading="lazy" width={120} height={120} />
+        <img src={item.logo_url} alt={item.name} loading="lazy" width={120} height={120} />
     ) : (
         <span className="ecosystem-iso-mark" style={{ fontSize: '2rem', letterSpacing: 0 }}>
-            {(project?.title || '?').slice(0, 1)}
+            {(item?.name || '?').slice(0, 1)}
         </span>
     );
 
-    if (interactive && project) {
+    if (interactive && item) {
         return (
             <button
                 type="button"
-                className={`ecosystem-iso-tile ${tone} cursor-pointer`}
+                className={`ecosystem-iso-tile ${tone}`}
                 style={{ ['--tile-delay' as string]: delay }}
-                onClick={() => onSelect?.(project.id)}
-                aria-label={`${project.title} detayını aç`}
+                onClick={() => onSelect?.(item.id)}
+                aria-label={`${item.name} detayını aç`}
             >
                 {inner}
             </button>
@@ -73,24 +77,20 @@ function Tile({ index, kind, project, onSelect }: TileProps) {
     }
 
     return (
-        <div
-            className={`ecosystem-iso-tile ${tone}`}
-            style={{ ['--tile-delay' as string]: delay }}
-        >
+        <div className={`ecosystem-iso-tile ${tone}`} style={{ ['--tile-delay' as string]: delay }}>
             {inner}
         </div>
     );
 }
 
 export function EcosystemIso({
-    projects = [],
-    onSelectProject
+    items = [],
+    onSelectItem
 }: {
-    projects?: ShowcaseProject[];
-    onSelectProject?: (id: string) => void;
+    items?: EcosystemItem[];
+    onSelectItem?: (id: string) => void;
 }) {
-    const withLogo = projects.filter((p) => p.logo_url || p.title);
-    let projectCursor = 0;
+    let cursor = 0;
 
     const cells = GRID.map((slot, index) => {
         if (slot === null) {
@@ -99,17 +99,17 @@ export function EcosystemIso({
         if (slot === 0) {
             return <Tile key={`b-${index}`} index={index} kind="brand" />;
         }
-        const project = withLogo[projectCursor++];
-        if (!project) {
+        const item = items[cursor++];
+        if (!item) {
             return <Tile key={`e-${index}`} index={index} kind="empty" />;
         }
         return (
             <Tile
-                key={`p-${project.id}-${index}`}
+                key={`i-${item.id}-${index}`}
                 index={index}
-                kind="project"
-                project={project}
-                onSelect={onSelectProject}
+                kind="item"
+                item={item}
+                onSelect={onSelectItem}
             />
         );
     });

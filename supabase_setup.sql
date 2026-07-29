@@ -121,6 +121,25 @@ select * from (values
 where not exists (select 1 from company_finance_calc_lines limit 1);
 
 -- -----------------------------------------------------------------------------
+-- 5b) Teknolojiler & partnerlikler (izometrik ekosistem)
+-- -----------------------------------------------------------------------------
+create table if not exists ecosystem_items (
+  id uuid default uuid_generate_v4() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  name text not null,
+  kind text not null default 'technology',
+  logo_url text default '',
+  summary text default '',
+  body text default '',
+  links jsonb default '[]'::jsonb,
+  sort_order integer not null default 0,
+  visible boolean not null default true,
+  tile_tone text not null default 'light'
+);
+
+-- Örnek seed: create_ecosystem_items.sql dosyasına bakın (8 kayıt)
+
+-- -----------------------------------------------------------------------------
 -- 6) RLS — anon key ile panel/vitrin (geliştirme; panel cookie ile korunuyor)
 -- -----------------------------------------------------------------------------
 alter table projects enable row level security;
@@ -128,6 +147,7 @@ alter table domains enable row level security;
 alter table ai_subscriptions enable row level security;
 alter table site_content enable row level security;
 alter table company_finance_calc_lines enable row level security;
+alter table ecosystem_items enable row level security;
 
 drop policy if exists "Enable access to all users" on projects;
 create policy "Enable access to all users" on projects for all using (true) with check (true);
@@ -143,6 +163,9 @@ create policy "Enable access to all users" on site_content for all using (true) 
 
 drop policy if exists "Enable access to all users" on company_finance_calc_lines;
 create policy "Enable access to all users" on company_finance_calc_lines for all using (true) with check (true);
+
+drop policy if exists "Enable access to all users" on ecosystem_items;
+create policy "Enable access to all users" on ecosystem_items for all using (true) with check (true);
 
 -- -----------------------------------------------------------------------------
 -- 7) Proje görselleri (Storage)

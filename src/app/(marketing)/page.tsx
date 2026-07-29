@@ -5,6 +5,12 @@ import {
     type ShowcaseProject,
     type SiteContent
 } from '@/lib/marketing-types';
+import {
+    normalizeEcosystemKind,
+    normalizeTileTone,
+    parseEcosystemLinks,
+    type EcosystemItem
+} from '@/lib/ecosystem-types';
 import { Hero } from '@/components/marketing/hero';
 import { AboutSection } from '@/components/marketing/about-section';
 import { WorkSection } from '@/components/marketing/work-section';
@@ -25,7 +31,6 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
 
         if (!full.error && full.data) return full.data as ShowcaseProject[];
 
-        // Eski şema (logo_url vb. yoksa) — geriye uyumlu
         const basic = await client
             .from('projects')
             .select(
@@ -40,6 +45,33 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
             logo_url: null,
             showcase_links: []
         })) as ShowcaseProject[];
+    } catch {
+        return [];
+    }
+}
+
+async function loadEcosystem(): Promise<EcosystemItem[]> {
+    try {
+        if (!supabaseUrl || !resolvePublicAnonKey()) return [];
+        const client = createClient(supabaseUrl, resolvePublicAnonKey());
+        const { data, error } = await client
+            .from('ecosystem_items')
+            .select('*')
+            .eq('visible', true)
+            .order('sort_order', { ascending: true });
+        if (error || !data) return [];
+        return data.map((row) => ({
+            id: row.id,
+            name: row.name,
+            kind: normalizeEcosystemKind(row.kind),
+            logo_url: row.logo_url || '',
+            summary: row.summary || '',
+            body: row.body || '',
+            links: parseEcosystemLinks(row.links),
+            sort_order: Number(row.sort_order) || 0,
+            visible: true,
+            tile_tone: normalizeTileTone(row.tile_tone)
+        }));
     } catch {
         return [];
     }
@@ -62,13 +94,17 @@ async function loadSiteContent(): Promise<SiteContent> {
 }
 
 export default async function HomePage() {
-    const [projects, content] = await Promise.all([loadShowcase(), loadSiteContent()]);
+    const [projects, ecosystem, content] = await Promise.all([
+        loadShowcase(),
+        loadEcosystem(),
+        loadSiteContent()
+    ]);
 
     return (
         <>
             <Hero />
             <AboutSection content={content} />
-            <WorkSection projects={projects} />
+            <WorkSection projects={projects} ecosystem={ecosystem} />
             <ProcessSection />
             <ContactSection content={content} />
         </>

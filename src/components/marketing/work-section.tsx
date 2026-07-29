@@ -1,7 +1,14 @@
 import type { ShowcaseProject } from '@/lib/marketing-types';
+import type { EcosystemItem } from '@/lib/ecosystem-types';
 import { WorkShowcase } from '@/components/marketing/work-showcase';
 
-export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
+export function WorkSection({
+    projects,
+    ecosystem
+}: {
+    projects: ShowcaseProject[];
+    ecosystem: EcosystemItem[];
+}) {
     return (
         <section id="isler" className="scroll-mt-20 border-t border-white/5 py-24 md:py-32">
             <div className="mx-auto max-w-6xl px-5 md:px-8">
@@ -9,15 +16,15 @@ export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
                     İşler
                 </p>
                 <h2 className="font-display mt-4 text-3xl text-white md:text-4xl">
-                    Seçilmiş işler
+                    Ekosistem ve seçilmiş işler
                 </h2>
                 <p className="mt-4 max-w-xl text-[#9CA3AF]">
-                    Projelerimizi izometrik vitrinde ve kartlarda keşfedin; detay için birine tıklayın.
+                    Kullandığımız teknolojiler, partnerlikler ve vitrine taşıdığımız projeler.
                 </p>
             </div>
 
             <div className="mt-10 md:mt-14">
-                <WorkShowcase projects={projects} />
+                <WorkShowcase projects={projects} ecosystem={ecosystem} />
             </div>
         </section>
     );

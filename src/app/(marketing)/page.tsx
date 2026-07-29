@@ -24,7 +24,7 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
         const full = await client
             .from('projects')
             .select(
-                'id, title, showcase_summary, showcase_image, showcase_body, logo_url, showcase_links, domain_detail, use_domain, showcase_order'
+                'id, title, showcase_summary, showcase_image, showcase_body, logo_url, showcase_gallery, showcase_links, domain_detail, use_domain, showcase_order'
             )
             .eq('showcase', true)
             .order('showcase_order', { ascending: true });
@@ -43,6 +43,7 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
             ...row,
             showcase_body: null,
             logo_url: null,
+            showcase_gallery: [],
             showcase_links: []
         })) as ShowcaseProject[];
     } catch {

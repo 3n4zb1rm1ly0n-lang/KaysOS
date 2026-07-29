@@ -10,6 +10,7 @@ export type ShowcaseProject = {
     showcase_image: string | null;
     showcase_body: string | null;
     logo_url: string | null;
+    showcase_gallery: string[] | null;
     showcase_links: ShowcaseLink[] | null;
     domain_detail: string | null;
     use_domain: boolean | null;
@@ -49,4 +50,11 @@ export function parseShowcaseLinks(raw: unknown): ShowcaseLink[] {
         )
         .map((x) => ({ label: x.label.trim(), url: x.url.trim() }))
         .filter((x) => x.label && x.url);
+}
+
+export function parseShowcaseGallery(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((x) => x.trim());
 }

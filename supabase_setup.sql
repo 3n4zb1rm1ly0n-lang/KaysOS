@@ -42,7 +42,8 @@ create table if not exists projects (
   showcase_order integer default 0,
   logo_url text default '',
   showcase_body text default '',
-  showcase_links jsonb default '[]'::jsonb
+  showcase_links jsonb default '[]'::jsonb,
+  showcase_gallery jsonb default '[]'::jsonb
 );
 
 -- -----------------------------------------------------------------------------

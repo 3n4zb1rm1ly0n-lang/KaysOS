@@ -3,11 +3,12 @@
 import { useEffect, useId, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import type { ShowcaseProject } from '@/lib/marketing-types';
-import { parseShowcaseLinks } from '@/lib/marketing-types';
+import { parseShowcaseGallery, parseShowcaseLinks } from '@/lib/marketing-types';
 import type { EcosystemItem } from '@/lib/ecosystem-types';
 import { ECOSYSTEM_KIND_LABELS, parseEcosystemLinks } from '@/lib/ecosystem-types';
 import { extractHostname } from '@/lib/hostname';
 import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
+import { ImageSlider } from '@/components/marketing/image-slider';
 
 function siteUrl(p: ShowcaseProject): string | null {
     if (p.use_domain && p.domain_detail) {
@@ -17,12 +18,22 @@ function siteUrl(p: ShowcaseProject): string | null {
     return null;
 }
 
+function siteHostLabel(p: ShowcaseProject): string | null {
+    if (p.use_domain && p.domain_detail) {
+        return extractHostname(p.domain_detail);
+    }
+    return null;
+}
+
 function DetailModal({
     title,
     summary,
     body,
     logoUrl,
+    gallery,
     links,
+    siteHref,
+    siteLabel,
     badge,
     onClose
 }: {
@@ -30,11 +41,15 @@ function DetailModal({
     summary?: string | null;
     body?: string | null;
     logoUrl?: string | null;
+    gallery?: string[];
     links: { label: string; url: string }[];
+    siteHref?: string | null;
+    siteLabel?: string | null;
     badge?: string;
     onClose: () => void;
 }) {
     const titleId = useId();
+    const slides = gallery && gallery.length > 0 ? gallery : [];
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -63,6 +78,10 @@ function DetailModal({
                 onClick={onClose}
             />
             <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0F1419] shadow-2xl sm:rounded-2xl">
+                {slides.length > 0 && (
+                    <ImageSlider images={slides} alt={title} className="h-48 w-full shrink-0 sm:h-56" />
+                )}
+
                 <div className="flex items-start gap-4 border-b border-white/10 px-5 py-4">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/10">
                         {logoUrl ? (
@@ -100,6 +119,25 @@ function DetailModal({
                 </div>
 
                 <div className="overflow-y-auto px-5 py-5 space-y-5">
+                    {siteHref && (
+                        <a
+                            href={siteHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between gap-3 rounded-xl border border-[#1A9B8E]/35 bg-[#1A9B8E]/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-[#1A9B8E]/20"
+                        >
+                            <span className="truncate">
+                                Siteyi aç
+                                {siteLabel ? (
+                                    <span className="ml-2 font-normal text-[#9CA3AF]">
+                                        {siteLabel}
+                                    </span>
+                                ) : null}
+                            </span>
+                            <ExternalLink className="h-4 w-4 shrink-0 opacity-80" />
+                        </a>
+                    )}
+
                     {body ? (
                         <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB]">
                             {body}
@@ -150,12 +188,7 @@ export function WorkShowcase({
     const projectActive = projects.find((p) => p.id === projectId) ?? null;
 
     const projectLinks = projectActive
-        ? [
-              ...(siteUrl(projectActive)
-                  ? [{ label: 'Siteyi aç', url: siteUrl(projectActive)! }]
-                  : []),
-              ...parseShowcaseLinks(projectActive.showcase_links)
-          ]
+        ? parseShowcaseLinks(projectActive.showcase_links)
         : [];
 
     return (
@@ -183,43 +216,51 @@ export function WorkShowcase({
                 </p>
             ) : (
                 <ul className="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 md:gap-5 md:px-8 lg:grid-cols-3">
-                    {projects.map((p) => (
-                        <li key={p.id}>
-                            <button
-                                type="button"
-                                onClick={() => setProjectId(p.id)}
-                                className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12171E] text-left transition hover:border-[#1A9B8E]/40 hover:bg-[#161C24]"
-                            >
-                                <div className="flex aspect-[16/10] items-center justify-center bg-gradient-to-b from-white/[0.06] to-transparent p-8">
-                                    {p.logo_url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                            src={p.logo_url}
-                                            alt=""
-                                            className="max-h-16 max-w-[70%] object-contain transition duration-300 group-hover:scale-105"
-                                        />
-                                    ) : (
-                                        <span className="font-display text-4xl text-[#1A9B8E]/80">
-                                            {p.title.slice(0, 1)}
+                    {projects.map((p) => {
+                        const gallery = parseShowcaseGallery(p.showcase_gallery);
+                        return (
+                            <li key={p.id}>
+                                <button
+                                    type="button"
+                                    onClick={() => setProjectId(p.id)}
+                                    className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12171E] text-left transition hover:border-[#1A9B8E]/40 hover:bg-[#161C24]"
+                                >
+                                    <ImageSlider
+                                        images={gallery}
+                                        alt={p.title}
+                                        className="aspect-[16/10] w-full"
+                                        overlay={
+                                            p.logo_url ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    src={p.logo_url}
+                                                    alt=""
+                                                    className="max-h-14 max-w-[55%] object-contain drop-shadow-lg transition duration-300 group-hover:scale-105"
+                                                />
+                                            ) : (
+                                                <span className="font-display text-4xl text-white/90 drop-shadow">
+                                                    {p.title.slice(0, 1)}
+                                                </span>
+                                            )
+                                        }
+                                    />
+                                    <div className="flex flex-1 flex-col border-t border-white/5 px-5 py-4">
+                                        <h3 className="font-display text-lg text-white transition group-hover:text-[#1A9B8E]">
+                                            {p.title}
+                                        </h3>
+                                        {p.showcase_summary && (
+                                            <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#9CA3AF]">
+                                                {p.showcase_summary}
+                                            </p>
+                                        )}
+                                        <span className="mt-4 text-xs font-medium text-[#1A9B8E]/90">
+                                            Detayı aç →
                                         </span>
-                                    )}
-                                </div>
-                                <div className="flex flex-1 flex-col border-t border-white/5 px-5 py-4">
-                                    <h3 className="font-display text-lg text-white transition group-hover:text-[#1A9B8E]">
-                                        {p.title}
-                                    </h3>
-                                    {p.showcase_summary && (
-                                        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#9CA3AF]">
-                                            {p.showcase_summary}
-                                        </p>
-                                    )}
-                                    <span className="mt-4 text-xs font-medium text-[#1A9B8E]/90">
-                                        Detayı aç →
-                                    </span>
-                                </div>
-                            </button>
-                        </li>
-                    ))}
+                                    </div>
+                                </button>
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
 
@@ -241,7 +282,10 @@ export function WorkShowcase({
                     summary={projectActive.showcase_summary}
                     body={projectActive.showcase_body}
                     logoUrl={projectActive.logo_url}
+                    gallery={parseShowcaseGallery(projectActive.showcase_gallery)}
                     links={projectLinks}
+                    siteHref={siteUrl(projectActive)}
+                    siteLabel={siteHostLabel(projectActive)}
                     badge="Proje"
                     onClose={() => setProjectId(null)}
                 />

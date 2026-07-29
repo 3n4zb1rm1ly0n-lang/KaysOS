@@ -14,6 +14,8 @@ import { format, differenceInDays, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { syncProjectDomain } from '@/lib/project-domain-sync';
 import { ImageUploadField } from '@/components/panel/image-upload-field';
+import { MultiImageUploadField } from '@/components/panel/multi-image-upload-field';
+import { parseShowcaseGallery } from '@/lib/marketing-types';
 
 type ProjectStatus =
     | 'idea'
@@ -42,6 +44,7 @@ interface ProjectRow {
     showcase_order?: number | null;
     logo_url?: string | null;
     showcase_body?: string | null;
+    showcase_gallery?: string[] | null;
     showcase_links?: { label: string; url: string }[] | null;
     use_vercel: boolean;
     vercel_detail: string | null;
@@ -127,6 +130,7 @@ const emptyProjectForm = () => ({
     showcase_order: '0',
     logo_url: '',
     showcase_body: '',
+    showcase_gallery: [] as string[],
     showcase_links: [{ label: '', url: '' }] as { label: string; url: string }[],
     use_vercel: false,
     vercel_detail: '',
@@ -162,6 +166,7 @@ type ProjectSavePayload = {
     showcase_order: number;
     logo_url: string;
     showcase_body: string;
+    showcase_gallery: string[];
     showcase_links: { label: string; url: string }[];
     use_vercel: boolean;
     vercel_detail: string;
@@ -182,6 +187,7 @@ type ShowcaseFields =
     | 'showcase_order'
     | 'logo_url'
     | 'showcase_body'
+    | 'showcase_gallery'
     | 'showcase_links';
 
 function isMissingShowcaseColumnError(err: { message?: string; code?: string } | null): boolean {
@@ -190,7 +196,8 @@ function isMissingShowcaseColumnError(err: { message?: string; code?: string } |
         msg.includes('showcase') ||
         msg.includes('logo_url') ||
         msg.includes('showcase_body') ||
-        msg.includes('showcase_links')
+        msg.includes('showcase_links') ||
+        msg.includes('showcase_gallery')
     ) {
         return true;
     }
@@ -208,7 +215,8 @@ function payloadWithoutShowcase(
         showcase_order: _d,
         logo_url: _e,
         showcase_body: _f,
-        showcase_links: _g,
+        showcase_gallery: _g,
+        showcase_links: _h,
         ...rest
     } = p;
     return rest;
@@ -375,6 +383,7 @@ export default function ProjectsPage() {
             showcase_order: String(p.showcase_order ?? 0),
             logo_url: p.logo_url || '',
             showcase_body: p.showcase_body || '',
+            showcase_gallery: parseShowcaseGallery(p.showcase_gallery),
             showcase_links:
                 Array.isArray(p.showcase_links) && p.showcase_links.length > 0
                     ? p.showcase_links.map((l) => ({
@@ -420,6 +429,7 @@ export default function ProjectsPage() {
             showcase_order: Number.parseInt(projectForm.showcase_order, 10) || 0,
             logo_url: projectForm.logo_url.trim(),
             showcase_body: projectForm.showcase_body.trim(),
+            showcase_gallery: projectForm.showcase_gallery.filter(Boolean),
             showcase_links: projectForm.showcase_links
                 .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
                 .filter((l) => l.label && l.url),
@@ -1104,7 +1114,19 @@ export default function ProjectsPage() {
                                             onChange={(url) =>
                                                 setProjectForm((f) => ({ ...f, logo_url: url }))
                                             }
-                                            hint="İzo kareler ve kartlarda kullanılır. Kare PNG/SVG önerilir."
+                                            hint="Kartın önünde ve modalda görünür. Kare PNG/SVG önerilir."
+                                        />
+                                        <MultiImageUploadField
+                                            label="Site görselleri (slider)"
+                                            folder="covers"
+                                            value={projectForm.showcase_gallery}
+                                            onChange={(urls) =>
+                                                setProjectForm((f) => ({
+                                                    ...f,
+                                                    showcase_gallery: urls
+                                                }))
+                                            }
+                                            hint="Logonun arkasında kayar. Birden fazla ekleyebilirsiniz. Sıra ← → ile değişir."
                                         />
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">

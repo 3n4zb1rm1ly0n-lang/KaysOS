@@ -39,7 +39,10 @@ create table if not exists projects (
   showcase boolean default false,
   showcase_summary text default '',
   showcase_image text default '',
-  showcase_order integer default 0
+  showcase_order integer default 0,
+  logo_url text default '',
+  showcase_body text default '',
+  showcase_links jsonb default '[]'::jsonb
 );
 
 -- -----------------------------------------------------------------------------

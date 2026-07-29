@@ -15,15 +15,31 @@ async function loadShowcase(): Promise<ShowcaseProject[]> {
     try {
         if (!supabaseUrl || !resolvePublicAnonKey()) return [];
         const client = createClient(supabaseUrl, resolvePublicAnonKey());
-        const { data, error } = await client
+        const full = await client
+            .from('projects')
+            .select(
+                'id, title, showcase_summary, showcase_image, showcase_body, logo_url, showcase_links, domain_detail, use_domain, showcase_order'
+            )
+            .eq('showcase', true)
+            .order('showcase_order', { ascending: true });
+
+        if (!full.error && full.data) return full.data as ShowcaseProject[];
+
+        // Eski şema (logo_url vb. yoksa) — geriye uyumlu
+        const basic = await client
             .from('projects')
             .select(
                 'id, title, showcase_summary, showcase_image, domain_detail, use_domain, showcase_order'
             )
             .eq('showcase', true)
             .order('showcase_order', { ascending: true });
-        if (error || !data) return [];
-        return data as ShowcaseProject[];
+        if (basic.error || !basic.data) return [];
+        return basic.data.map((row) => ({
+            ...row,
+            showcase_body: null,
+            logo_url: null,
+            showcase_links: []
+        })) as ShowcaseProject[];
     } catch {
         return [];
     }

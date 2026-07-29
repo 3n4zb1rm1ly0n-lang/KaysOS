@@ -188,6 +188,15 @@ body {
   animation-delay: var(--tile-delay);
   transition: transform 180ms ease, box-shadow 180ms ease;
   overflow: visible;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+button.ecosystem-iso-tile {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .ecosystem-iso-tile::before {

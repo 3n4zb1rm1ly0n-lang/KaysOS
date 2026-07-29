@@ -1,8 +1,16 @@
+export type ShowcaseLink = {
+    label: string;
+    url: string;
+};
+
 export type ShowcaseProject = {
     id: string;
     title: string;
     showcase_summary: string | null;
     showcase_image: string | null;
+    showcase_body: string | null;
+    logo_url: string | null;
+    showcase_links: ShowcaseLink[] | null;
     domain_detail: string | null;
     use_domain: boolean | null;
     showcase_order: number | null;
@@ -28,3 +36,17 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     contact_email: 'hello@kaysia.co',
     contact_note: 'Yeni bir ürün veya yenileme mi düşünüyorsunuz? Kısa bir not bırakın.'
 };
+
+export function parseShowcaseLinks(raw: unknown): ShowcaseLink[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter(
+            (x): x is ShowcaseLink =>
+                typeof x === 'object' &&
+                x !== null &&
+                typeof (x as ShowcaseLink).label === 'string' &&
+                typeof (x as ShowcaseLink).url === 'string'
+        )
+        .map((x) => ({ label: x.label.trim(), url: x.url.trim() }))
+        .filter((x) => x.label && x.url);
+}

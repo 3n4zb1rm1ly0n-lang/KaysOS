@@ -39,6 +39,9 @@ interface ProjectRow {
     showcase_summary?: string | null;
     showcase_image?: string | null;
     showcase_order?: number | null;
+    logo_url?: string | null;
+    showcase_body?: string | null;
+    showcase_links?: { label: string; url: string }[] | null;
     use_vercel: boolean;
     vercel_detail: string | null;
     use_supabase: boolean;
@@ -121,6 +124,9 @@ const emptyProjectForm = () => ({
     showcase_summary: '',
     showcase_image: '',
     showcase_order: '0',
+    logo_url: '',
+    showcase_body: '',
+    showcase_links: [{ label: '', url: '' }] as { label: string; url: string }[],
     use_vercel: false,
     vercel_detail: '',
     use_supabase: false,
@@ -153,6 +159,9 @@ type ProjectSavePayload = {
     showcase_summary: string;
     showcase_image: string;
     showcase_order: number;
+    logo_url: string;
+    showcase_body: string;
+    showcase_links: { label: string; url: string }[];
     use_vercel: boolean;
     vercel_detail: string;
     use_supabase: boolean;
@@ -165,12 +174,26 @@ type ProjectSavePayload = {
     updated_at: string;
 };
 
-type ShowcaseFields = 'showcase' | 'showcase_summary' | 'showcase_image' | 'showcase_order';
+type ShowcaseFields =
+    | 'showcase'
+    | 'showcase_summary'
+    | 'showcase_image'
+    | 'showcase_order'
+    | 'logo_url'
+    | 'showcase_body'
+    | 'showcase_links';
 
 function isMissingShowcaseColumnError(err: { message?: string; code?: string } | null): boolean {
     const msg = (err?.message || '').toLowerCase();
-    if (msg.includes('showcase')) return true;
-    if (err?.code === '42703' && msg.includes('showcase')) return true;
+    if (
+        msg.includes('showcase') ||
+        msg.includes('logo_url') ||
+        msg.includes('showcase_body') ||
+        msg.includes('showcase_links')
+    ) {
+        return true;
+    }
+    if (err?.code === '42703' && (msg.includes('showcase') || msg.includes('logo'))) return true;
     return false;
 }
 
@@ -182,6 +205,9 @@ function payloadWithoutShowcase(
         showcase_summary: _b,
         showcase_image: _c,
         showcase_order: _d,
+        logo_url: _e,
+        showcase_body: _f,
+        showcase_links: _g,
         ...rest
     } = p;
     return rest;
@@ -346,6 +372,15 @@ export default function ProjectsPage() {
             showcase_summary: p.showcase_summary || '',
             showcase_image: p.showcase_image || '',
             showcase_order: String(p.showcase_order ?? 0),
+            logo_url: p.logo_url || '',
+            showcase_body: p.showcase_body || '',
+            showcase_links:
+                Array.isArray(p.showcase_links) && p.showcase_links.length > 0
+                    ? p.showcase_links.map((l) => ({
+                          label: l.label || '',
+                          url: l.url || ''
+                      }))
+                    : [{ label: '', url: '' }],
             use_vercel: !!p.use_vercel,
             vercel_detail: p.vercel_detail || '',
             use_supabase: !!p.use_supabase,
@@ -382,6 +417,11 @@ export default function ProjectsPage() {
             showcase_summary: projectForm.showcase_summary.trim(),
             showcase_image: projectForm.showcase_image.trim(),
             showcase_order: Number.parseInt(projectForm.showcase_order, 10) || 0,
+            logo_url: projectForm.logo_url.trim(),
+            showcase_body: projectForm.showcase_body.trim(),
+            showcase_links: projectForm.showcase_links
+                .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+                .filter((l) => l.label && l.url),
             use_vercel: projectForm.use_vercel,
             vercel_detail: projectForm.vercel_detail.trim(),
             use_supabase: projectForm.use_supabase,
@@ -417,7 +457,7 @@ export default function ProjectsPage() {
             if (error && isMissingShowcaseColumnError(error)) {
                 body = { ...payloadWithoutShowcase(payload) };
                 notices.push(
-                    'Vitrin sütunları henüz yok: kayıt vitrin bilgisi olmadan saklandı. `add_showcase_and_site_content.sql` çalıştırın.'
+                    'Vitrin sütunları henüz yok: kayıt vitrin bilgisi olmadan saklandı. Supabase SQL Editor’da `add_showcase_logo_and_links.sql` (veya eski `add_showcase_and_site_content.sql`) çalıştırın.'
                 );
                 ({ data: savedRows, error } = await runSave(body));
             }
@@ -507,6 +547,18 @@ export default function ProjectsPage() {
             const next = [...f.accounts];
             next[index] = { ...next[index], [field]: value };
             return { ...f, accounts: next };
+        });
+    };
+
+    const updateShowcaseLink = (
+        index: number,
+        field: 'label' | 'url',
+        value: string
+    ) => {
+        setProjectForm((f) => {
+            const next = [...f.showcase_links];
+            next[index] = { ...next[index], [field]: value };
+            return { ...f, showcase_links: next };
         });
     };
 
@@ -1023,9 +1075,7 @@ export default function ProjectsPage() {
                                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                                 />
                                 <p className="text-[11px] text-muted-foreground mt-1">
-                                    Doluysa{' '}
-                                    <span className="text-foreground/80">Finansal Takvim</span>’de proje olarak
-                                    görünür.
+                                    Doluysa Takvim’de proje olarak görünür.
                                 </p>
                             </div>
 
@@ -1042,13 +1092,32 @@ export default function ProjectsPage() {
                                         }
                                         className="rounded border-border"
                                     />
-                                    Vitrinde göster (kaysia.co)
+                                    Vitrinde göster (site İşler + izometrik kareler)
                                 </label>
                                 {projectForm.showcase && (
                                     <>
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                                Vitrin özeti
+                                                Logo URL
+                                            </label>
+                                            <input
+                                                value={projectForm.logo_url}
+                                                onChange={(e) =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        logo_url: e.target.value
+                                                    }))
+                                                }
+                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                                placeholder="https://…/logo.png"
+                                            />
+                                            <p className="text-[11px] text-muted-foreground mt-1">
+                                                Kare vitrin ve kartlarda kullanılır. Kare PNG/SVG önerilir.
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                                Kart özeti (kısa)
                                             </label>
                                             <textarea
                                                 rows={2}
@@ -1060,12 +1129,29 @@ export default function ProjectsPage() {
                                                     }))
                                                 }
                                                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
-                                                placeholder="Kısa proje açıklaması"
+                                                placeholder="Kartta görünen 1–2 cümle"
                                             />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                                Görsel URL (opsiyonel)
+                                                Modal detay (uzun açıklama)
+                                            </label>
+                                            <textarea
+                                                rows={4}
+                                                value={projectForm.showcase_body}
+                                                onChange={(e) =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        showcase_body: e.target.value
+                                                    }))
+                                                }
+                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
+                                                placeholder="Tıklanınca açılan detay metni"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                                Kapak görseli URL (opsiyonel)
                                             </label>
                                             <input
                                                 value={projectForm.showcase_image}
@@ -1081,7 +1167,7 @@ export default function ProjectsPage() {
                                         </div>
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                                Sıra
+                                                Vitrin sırası
                                             </label>
                                             <input
                                                 type="number"
@@ -1094,6 +1180,74 @@ export default function ProjectsPage() {
                                                 }
                                                 className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm"
                                             />
+                                            <p className="text-[11px] text-muted-foreground mt-1">
+                                                Küçük sayı önce; izo karelerde de bu sırayla dolar.
+                                            </p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-medium text-muted-foreground">
+                                                Modal linkleri (etiket + URL)
+                                            </p>
+                                            {projectForm.showcase_links.map((link, idx) => (
+                                                <div key={idx} className="flex gap-2 items-center">
+                                                    <input
+                                                        placeholder="GitHub"
+                                                        value={link.label}
+                                                        onChange={(e) =>
+                                                            updateShowcaseLink(
+                                                                idx,
+                                                                'label',
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        className="w-28 shrink-0 rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+                                                    />
+                                                    <input
+                                                        placeholder="https://..."
+                                                        value={link.url}
+                                                        onChange={(e) =>
+                                                            updateShowcaseLink(
+                                                                idx,
+                                                                'url',
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        className="flex-1 min-w-0 rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setProjectForm((f) => ({
+                                                                ...f,
+                                                                showcase_links:
+                                                                    f.showcase_links.length <= 1
+                                                                        ? [{ label: '', url: '' }]
+                                                                        : f.showcase_links.filter(
+                                                                              (_, i) => i !== idx
+                                                                          )
+                                                            }))
+                                                        }
+                                                        className="text-xs text-muted-foreground hover:text-red-400 px-1"
+                                                    >
+                                                        Sil
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setProjectForm((f) => ({
+                                                        ...f,
+                                                        showcase_links: [
+                                                            ...f.showcase_links,
+                                                            { label: '', url: '' }
+                                                        ]
+                                                    }))
+                                                }
+                                                className="text-xs text-primary hover:underline"
+                                            >
+                                                + Link ekle
+                                            </button>
                                         </div>
                                     </>
                                 )}

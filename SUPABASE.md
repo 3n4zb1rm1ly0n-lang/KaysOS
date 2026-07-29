@@ -36,8 +36,9 @@ ADMIN_PASSWORD=141592
 ## 4. Şema
 
 1. Dashboard → **SQL Editor** → New query.
-2. [`supabase_setup.sql`](supabase_setup.sql) dosyasının **tamamını** yapıştırıp **Run**.
-3. **Table Editor**’da şunlar görünmeli: `projects`, `domains`, `ai_subscriptions`, `site_content`, `company_finance_calc_lines`.
+2. [`supabase_setup.sql`](supabase_setup.sql) dosyasının **tamamını** yapıştırıp **Run** (yeni proje).
+3. Mevcut projeye ek alanlar için ayrıca [`add_showcase_logo_and_links.sql`](add_showcase_logo_and_links.sql) çalıştırın.
+4. **Table Editor**’da `projects` içinde `logo_url`, `showcase_body`, `showcase_links` görünmeli.
 
 ## 5. Doğrulama
 

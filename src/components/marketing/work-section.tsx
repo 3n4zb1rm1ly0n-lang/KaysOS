@@ -1,6 +1,5 @@
 import type { ShowcaseProject } from '@/lib/marketing-types';
-import { extractHostname } from '@/lib/hostname';
-import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
+import { WorkShowcase } from '@/components/marketing/work-showcase';
 
 export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
     return (
@@ -13,63 +12,12 @@ export function WorkSection({ projects }: { projects: ShowcaseProject[] }) {
                     Seçilmiş işler
                 </h2>
                 <p className="mt-4 max-w-xl text-[#9CA3AF]">
-                    Panelden vitrine taşıdığımız güncel çalışmalar.
+                    Projelerimizi izometrik vitrinde ve kartlarda keşfedin; detay için birine tıklayın.
                 </p>
             </div>
 
             <div className="mt-10 md:mt-14">
-                <EcosystemIso />
-            </div>
-
-            <div className="mx-auto max-w-6xl px-5 md:px-8">
-                {projects.length === 0 ? (
-                    <p className="mt-10 text-sm text-[#6B7280] md:mt-6">
-                        Yakında burada seçilmiş projeler görünecek.
-                    </p>
-                ) : (
-                    <ul className="mt-10 divide-y divide-white/10 md:mt-6">
-                        {projects.map((p, i) => {
-                            const host =
-                                p.use_domain && p.domain_detail
-                                    ? extractHostname(p.domain_detail)
-                                    : null;
-                            return (
-                                <li
-                                    key={p.id}
-                                    className="group flex flex-col gap-3 py-8 md:flex-row md:items-end md:justify-between md:gap-8"
-                                >
-                                    <div className="min-w-0">
-                                        <span className="text-xs text-[#4B5563]">
-                                            {String(i + 1).padStart(2, '0')}
-                                        </span>
-                                        <h3 className="mt-2 font-display text-2xl text-white transition group-hover:text-[#1A9B8E] md:text-3xl">
-                                            {p.title}
-                                        </h3>
-                                        {p.showcase_summary && (
-                                            <p className="mt-2 max-w-lg text-sm leading-relaxed text-[#9CA3AF]">
-                                                {p.showcase_summary}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="shrink-0 text-sm text-[#6B7280]">
-                                        {host ? (
-                                            <a
-                                                href={`https://${host}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="hover:text-[#1A9B8E]"
-                                            >
-                                                {host}
-                                            </a>
-                                        ) : (
-                                            <span>—</span>
-                                        )}
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
+                <WorkShowcase projects={projects} />
             </div>
         </section>
     );

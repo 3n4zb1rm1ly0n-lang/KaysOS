@@ -78,10 +78,8 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
     // Helper: Parse Agent from content
     const getAgentStyle = (content: string) => {
         if (content.startsWith('[ASISTAN]')) return { name: 'Asistan', color: 'bg-zinc-950 border-amber-500/50 text-amber-500', icon: '🤖' };
-        if (content.startsWith('[FINANS]')) return { name: 'Finansman', color: 'bg-emerald-900/50 border-emerald-500/50 text-emerald-400', icon: '💰' };
-        if (content.startsWith('[MUHASEBE]')) return { name: 'Muhasebe', color: 'bg-blue-900/50 border-blue-500/50 text-blue-400', icon: 'calculator' };
-        if (content.startsWith('[ANALIST]')) return { name: 'Analist', color: 'bg-purple-900/50 border-purple-500/50 text-purple-400', icon: 'chart' };
         if (content.startsWith('[OPERASYON]')) return { name: 'Operasyon', color: 'bg-orange-900/50 border-orange-500/50 text-orange-400', icon: '⚡' };
+        if (content.startsWith('[ANALIST]')) return { name: 'Analist', color: 'bg-purple-900/50 border-purple-500/50 text-purple-400', icon: 'chart' };
         if (content.startsWith('[SISTEM]')) return { name: 'Sistem', color: 'bg-red-900/50 border-red-500/50 text-red-400', icon: '⚠️' };
         return { name: 'Asistan', color: 'bg-gray-800', icon: '🤖' };
     };
@@ -91,12 +89,10 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
     };
 
     const suggestions = [
-        "Şirketin genel nakit durumu nasıl?",
-        "Geçen ay ne kadar harcama yaptık?",
-        "Market alışverişi 3500 TL gider ekle.",
-        "5000 TL Nakit Satış geliri ekle.",
-        "Vadesi geçen borçları listele.",
-        "Kira için 10.000 TL bütçe ayarla."
+        "Aktif projeleri özetle.",
+        "Yaklaşan domain yenilemelerini listele.",
+        "Devam eden projeler neler?",
+        "Pipeline’daki fikirleri göster."
     ];
 
     return (
@@ -105,8 +101,7 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
             <div className="p-3 border-b border-white/5 flex items-center justify-between bg-black/20">
                 <div className="flex items-center gap-2 text-xs font-mono text-zinc-500">
                     <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Asistan</span>
-                    <span className="flex items-center gap-1 text-emerald-500"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Finans</span>
-                    <span className="flex items-center gap-1 text-blue-500"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Muhasebe</span>
+                    <span className="flex items-center gap-1 text-orange-500"><span className="w-1.5 h-1.5 rounded-full bg-orange-500" />Operasyon</span>
                     <span className="flex items-center gap-1 text-purple-500"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Analiz</span>
                 </div>
                 {onClose && (
@@ -129,7 +124,7 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
                         <div className="text-center space-y-2">
                             <h3 className="text-xl font-semibold text-white">Yönetim Kurulu Hazır</h3>
                             <p className="text-sm text-gray-400 max-w-xs mx-auto">
-                                Finans, Muhasebe, Analiz ve Operasyon ekipleri talimatlarınızı bekliyor.
+                                Asistan şu an kapalı; operasyon ve proje soruları için yakında.
                             </p>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full max-w-lg">

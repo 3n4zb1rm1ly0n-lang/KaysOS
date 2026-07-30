@@ -27,11 +27,18 @@ Proje kökünde `.env.local` (şablon: `.env.example`):
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
-NEXT_PUBLIC_ADMIN_PASSWORD=141592
-ADMIN_PASSWORD=141592
+ADMIN_PASSWORD=  # yalnızca Ayarlar → DB sıfırlama onayı (opsiyonel)
 ```
 
 `npm run dev` sürecini durdurup yeniden başlatın — Next.js env’i yalnızca restart’ta okur.
+
+## 3b. Panel girişi (e-posta + şifre)
+
+1. Dashboard → **Authentication** → **Providers** → **Email** açık olsun.
+2. **Authentication** → **Users** → **Add user** → e-posta + şifre (Auto Confirm User önerilir).
+3. `/login` sayfasında bu e-posta ve şifre ile giriş yapın.
+
+Oturum Supabase Auth cookie’leri ile tutulur; eski `auth=true` / admin şifre girişi kaldırıldı.
 
 ## 4. Şema
 
@@ -43,7 +50,7 @@ ADMIN_PASSWORD=141592
 
 ## 5. Doğrulama
 
-- `/login` → panele girin.
+- `/login` → Supabase kullanıcısı ile panele girin.
 - Projeler / Domainler açılmalı (boş liste normal).
 - **Şirket Finans → Hesaplama** satırları seed ile gelmeli; yüzde değiştirip kaydedin, sayfayı yenileyin.
 
@@ -51,8 +58,8 @@ Konsolda `placeholder.supabase.co` veya JWT/role hatası görürseniz URL/anon k
 
 ## Notlar
 
-- Panel girişi cookie + admin şifresi; Supabase Auth kullanılmıyor.
-- RLS açık politikalarla (anon CRUD) — erişim panelle sınırlı (geliştirme modeli).
+- Panel girişi: Supabase Auth (e-posta + şifre). Kullanıcıyı Dashboard’dan siz oluşturursunuz.
+- RLS açık politikalarla (anon/authenticated CRUD) — erişim panelle sınırlı (geliştirme modeli).
 - Eski finans tabloları (`incomes`, `expenses`, `debts`, …) bu scriptte yok.
 
 ## Ekosistem (teknoloji & partner)

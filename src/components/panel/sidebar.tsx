@@ -147,8 +147,9 @@ export function Sidebar() {
                 <button
                     type="button"
                     onClick={() => {
-                        document.cookie = 'auth=; path=/; max-age=0';
-                        window.location.href = '/';
+                        void import('@/lib/auth-client').then((m) =>
+                            m.signOutAndRedirect('/')
+                        );
                     }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
                 >

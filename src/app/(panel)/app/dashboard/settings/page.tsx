@@ -186,7 +186,7 @@ export default function SettingsPage() {
                 <div className="p-6 space-y-4">
                     <p className="text-sm text-muted-foreground">
                         Domainler, projeler, AI abonelikleri ve şirket finans hesap satırları kalıcı olarak
-                        silinir. Bu işlem geri alınamaz. Yalnızca panel şifreniz ile yapılabilir.
+                        silinir. Bu işlem geri alınamaz. Onay için `ADMIN_PASSWORD` (.env) gerekir.
                     </p>
                     <button
                         type="button"
@@ -210,8 +210,8 @@ export default function SettingsPage() {
                             Veritabanını sıfırla
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                            Devam etmek için admin giriş şifrenizi girin. Tüm listelenen tablolar
-                            boşaltılacaktır.
+                            Devam etmek için onay şifresini girin (ADMIN_PASSWORD). Tüm listelenen
+                            tablolar boşaltılacaktır.
                         </p>
                         <form onSubmit={handleResetDatabase} className="space-y-4">
                             <div>
@@ -224,7 +224,7 @@ export default function SettingsPage() {
                                     autoComplete="current-password"
                                     value={resetPassword}
                                     onChange={(e) => setResetPassword(e.target.value)}
-                                    placeholder="Panel şifresi"
+                                    placeholder="Onay şifresi"
                                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                                 />
                             </div>

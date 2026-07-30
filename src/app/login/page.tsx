@@ -1,28 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock } from 'lucide-react';
-import { DEFAULT_ADMIN_PASSWORD } from '@/lib/admin-password';
-import { Suspense } from 'react';
+import { Lock, Loader2 } from 'lucide-react';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 function LoginForm() {
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const expected =
-            process.env.NEXT_PUBLIC_ADMIN_PASSWORD?.trim() || DEFAULT_ADMIN_PASSWORD;
-        if (password === expected) {
-            document.cookie = 'auth=true; path=/; max-age=86400; SameSite=Lax';
-            const returnTo = searchParams.get('returnTo') || '/app/dashboard';
-            router.push(returnTo.startsWith('/app') ? returnTo : '/app/dashboard');
-        } else {
-            setError('Hatalı şifre');
+        setError('');
+        setLoading(true);
+
+        const supabase = createSupabaseBrowserClient();
+        const { error: signError } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password
+        });
+
+        if (signError) {
+            setError(
+                signError.message === 'Invalid login credentials'
+                    ? 'E-posta veya şifre hatalı'
+                    : signError.message
+            );
+            setLoading(false);
+            return;
         }
+
+        // Eski cookie auth kalıntısı
+        document.cookie = 'auth=; path=/; max-age=0';
+
+        const returnTo = searchParams.get('returnTo') || '/app/dashboard';
+        router.push(returnTo.startsWith('/app') ? returnTo : '/app/dashboard');
+        router.refresh();
     };
 
     return (
@@ -34,11 +51,29 @@ function LoginForm() {
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight">Kaysia App</h2>
                     <p className="text-muted-foreground mt-2 text-sm">
-                        Devam etmek için şifreyi girin
+                        E-posta ve şifrenizle giriş yapın
                     </p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label htmlFor="email" className="sr-only">
+                            E-posta
+                        </label>
+                        <input
+                            id="email"
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={email}
+                            onChange={(e) => {
+                                setEmail(e.target.value);
+                                setError('');
+                            }}
+                            className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                            placeholder="E-posta"
+                        />
+                    </div>
                     <div>
                         <label htmlFor="password" className="sr-only">
                             Şifre
@@ -56,14 +91,14 @@ function LoginForm() {
                             className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                             placeholder="Şifre"
                         />
-                        {error && (
-                            <p className="mt-2 text-sm text-red-400">{error}</p>
-                        )}
                     </div>
+                    {error && <p className="text-sm text-red-400">{error}</p>}
                     <button
                         type="submit"
-                        className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white hover:bg-primary/90 transition"
+                        disabled={loading}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white hover:bg-primary/90 transition disabled:opacity-60"
                     >
+                        {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                         Giriş Yap
                     </button>
                 </form>

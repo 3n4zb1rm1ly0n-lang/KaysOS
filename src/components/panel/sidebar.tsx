@@ -14,7 +14,8 @@ import {
     Calculator,
     Blocks,
     ChevronDown,
-    ChevronRight
+    ChevronRight,
+    Wallet
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -32,6 +33,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Hesaplama',
         href: '/app/dashboard/company-finance/calculator',
         icon: Calculator
+    },
+    {
+        id: 'cf-monthly',
+        label: 'Aylık kazanç',
+        href: '/app/dashboard/company-finance/monthly',
+        icon: Wallet
     }
 ];
 

@@ -806,6 +806,15 @@ export default function ProjectsPage() {
                                 ) : null}
 
                                 <div className="flex flex-wrap gap-2 text-xs">
+                                    {p.showcase ? (
+                                        <span className="px-2 py-0.5 rounded border border-[#1A9B8E]/40 bg-[#1A9B8E]/15 text-[#1A9B8E]">
+                                            Vitrin
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-0.5 rounded border border-border text-muted-foreground">
+                                            Vitrinde değil
+                                        </span>
+                                    )}
                                     {p.use_domain && (
                                         <span className="px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
                                             Domain

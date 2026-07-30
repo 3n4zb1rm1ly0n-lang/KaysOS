@@ -17,6 +17,10 @@ import { WorkSection } from '@/components/marketing/work-section';
 import { ProcessSection } from '@/components/marketing/process-section';
 import { ContactSection } from '@/components/marketing/contact-section';
 
+/** Vitrin listesi güncel kalsın (yeni proje eklenince anında görünsün) */
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 async function loadShowcase(): Promise<ShowcaseProject[]> {
     try {
         if (!supabaseUrl || !resolvePublicAnonKey()) return [];

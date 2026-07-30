@@ -18,6 +18,7 @@ import {
     Wallet
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { KaysiaLogo } from '@/components/brand/kaysia-logo';
 
 export interface NavLinkItem {
     id: string;
@@ -69,8 +70,10 @@ export function Sidebar() {
     return (
         <aside className="hidden md:flex w-64 border-r h-full bg-background flex-col fixed left-0 top-0 overflow-y-auto z-50">
             <div className="p-6 border-b">
-                <h1 className="text-xl font-bold text-white">Kaysia</h1>
-                <p className="text-[11px] text-muted-foreground mt-0.5">App</p>
+                <Link href="/app/dashboard" aria-label="Kaysia App">
+                    <KaysiaLogo markClassName="h-7 w-7" wordmarkClassName="text-lg tracking-[0.22em]" />
+                </Link>
+                <p className="text-[11px] text-muted-foreground mt-1.5 pl-[2.35rem]">App</p>
             </div>
 
             <nav className="flex-1 p-4 space-y-1">

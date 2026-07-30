@@ -18,6 +18,7 @@ import {
     ChevronRight
 } from 'lucide-react';
 import { COMPANY_FINANCE_NAV_ITEMS } from './sidebar';
+import { KaysiaLogo } from '@/components/brand/kaysia-logo';
 
 function pathActive(pathname: string, href: string): boolean {
     if (pathname === href) return true;
@@ -56,7 +57,9 @@ export function MobileNav() {
                 >
                     <Menu className="w-6 h-6" />
                 </button>
-                <span className="font-bold text-lg">Kaysia</span>
+                <span className="inline-flex items-center">
+                    <KaysiaLogo markClassName="h-6 w-6" wordmarkClassName="text-base tracking-[0.2em]" />
+                </span>
             </div>
 
             {isOpen && (
@@ -69,7 +72,7 @@ export function MobileNav() {
 
                     <div className="relative w-[300px] h-full bg-background border-r p-6 flex flex-col animate-in slide-in-from-left duration-200">
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-bold text-white">Kaysia</h2>
+                            <KaysiaLogo markClassName="h-7 w-7" wordmarkClassName="text-lg tracking-[0.2em]" />
                             <button
                                 onClick={close}
                                 className="p-2 -mr-2 text-muted-foreground hover:text-foreground"

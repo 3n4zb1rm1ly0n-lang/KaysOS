@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { KaysiaLogo } from '@/components/brand/kaysia-logo';
 
 const NAV = [
     { href: '/#biz', label: 'Biz' },
@@ -17,11 +18,8 @@ export function SiteHeader() {
     return (
         <header className="sticky top-0 z-40 border-b border-white/5 bg-[#070A0E]/90 backdrop-blur-md">
             <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 md:px-8">
-                <Link
-                    href="/"
-                    className="font-display text-xl tracking-tight text-white md:text-2xl"
-                >
-                    Kaysia
+                <Link href="/" className="shrink-0" aria-label="Kaysia ana sayfa">
+                    <KaysiaLogo markClassName="h-7 w-7 md:h-8 md:w-8" />
                 </Link>
 
                 <nav className="hidden items-center gap-8 md:flex">
@@ -34,12 +32,6 @@ export function SiteHeader() {
                             {item.label}
                         </a>
                     ))}
-                    <Link
-                        href="/login"
-                        className="text-xs text-[#6B7280] transition-colors hover:text-[#9CA3AF]"
-                    >
-                        App
-                    </Link>
                 </nav>
 
                 <button
@@ -65,13 +57,6 @@ export function SiteHeader() {
                                 {item.label}
                             </a>
                         ))}
-                        <Link
-                            href="/login"
-                            onClick={() => setOpen(false)}
-                            className="text-sm text-[#6B7280]"
-                        >
-                            App girişi
-                        </Link>
                     </div>
                 </div>
             )}

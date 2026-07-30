@@ -1,7 +1,27 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    ChevronDown,
+    ChevronRight,
+    Info,
+    Loader2,
+    Plus,
+    Save,
+    Trash2
+} from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import {
+    DEFAULT_2026_BRACKETS,
+    SALES_VAT_RATE,
+    TEVFIKAT_OF_VAT_PERCENT,
+    cumulativeMonthlyTaxSchedule,
+    expenseBreakdown,
+    monthlyTaxableBase,
+    progressiveIncomeTax,
+    salesFromGrossInclusive,
+    type TaxBracket
+} from '@/lib/income-tax';
 
 const MONTH_LABELS = [
     'Ocak',
@@ -18,159 +38,584 @@ const MONTH_LABELS = [
     'Aralık'
 ] as const;
 
-type LineEffect = 'exclude' | 'deduction' | 'addition';
-
-type DerivedLine = {
-    key: string;
-    label: string;
+type ExpenseDraft = {
+    /** Geçici istemci id (yeni satırlar) */
+    localId: string;
+    dbId: string | null;
+    name: string;
+    amountGross: string;
+    kdvRate: string;
+    includeInDeductibleKdv: boolean;
     note: string;
-    amount: number;
-    effect: LineEffect;
 };
 
 type MonthDraft = {
-    /** KDV dahil brüt ciro — boş = veri yok, mevcut/önceki ile devam */
+    entryId: string | null;
     grossInput: string;
-    /** Ödenen KDV (manuel / ileride formül) */
     kdvPaidInput: string;
-    /** İndirilecek KDV */
     kdvDeductibleInput: string;
     note: string;
+    expenses: ExpenseDraft[];
+    dirty: boolean;
 };
+
+type KdvPreset = {
+    id: string;
+    name: string;
+    rate_percent: number;
+    sort_order: number;
+};
+
+type BracketRow = TaxBracket & { id?: string; sort_order?: number };
 
 function fmtMoney(n: number): string {
     return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function parseMoney(raw: string): number | null {
+function parseMoney(raw: string): number {
     const t = raw.trim().replace(/\s/g, '').replace(',', '.');
-    if (!t) return null;
+    if (!t) return 0;
     const n = parseFloat(t);
-    return Number.isFinite(n) && n >= 0 ? n : null;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-/** Taslak formül — senin örnek zincirin (ileride Formüller’den gelecek) */
-function deriveFromGross(gross: number): DerivedLine[] {
-    const birimFiyat = gross / 1.2;
-    const vergi = gross - birimFiyat;
-    const netGelir = birimFiyat - vergi;
-    const tevfikat = (vergi * 20) / 100;
-
-    return [
-        {
-            key: 'birim',
-            label: 'Birim Fiyat',
-            note: `${compact(gross)} ÷ 1.2`,
-            amount: birimFiyat,
-            effect: 'exclude'
-        },
-        {
-            key: 'vergi',
-            label: 'Vergi (KDV)',
-            note: `${compact(gross)} - ${compact(birimFiyat)}`,
-            amount: vergi,
-            effect: 'exclude'
-        },
-        {
-            key: 'net_gelir',
-            label: 'Net Gelir',
-            note: `${compact(birimFiyat)} - ${compact(vergi)}`,
-            amount: netGelir,
-            effect: 'exclude'
-        },
-        {
-            key: 'tevfikat',
-            label: 'Tevfikat',
-            note: `${compact(vergi)} % 20`,
-            amount: tevfikat,
-            effect: 'exclude'
-        }
-    ];
-}
-
-function compact(n: number): string {
-    return String(Math.round(n * 1000) / 1000);
+function emptyExpense(rate = 20): ExpenseDraft {
+    return {
+        localId: crypto.randomUUID(),
+        dbId: null,
+        name: '',
+        amountGross: '',
+        kdvRate: String(rate),
+        includeInDeductibleKdv: true,
+        note: ''
+    };
 }
 
 function emptyMonth(): MonthDraft {
-    return { grossInput: '', kdvPaidInput: '', kdvDeductibleInput: '', note: '' };
+    return {
+        entryId: null,
+        grossInput: '',
+        kdvPaidInput: '',
+        kdvDeductibleInput: '',
+        note: '',
+        expenses: [],
+        dirty: false
+    };
 }
 
 function buildYearDrafts(): MonthDraft[] {
     return Array.from({ length: 12 }, () => emptyMonth());
 }
 
-export default function MonthlyRevenueDraftPage() {
+function isFutureMonth(year: number, monthIndex: number, now = new Date()): boolean {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    return year > y || (year === y && monthIndex > m);
+}
+
+export default function MonthlyRevenuePage() {
     const currentYear = new Date().getFullYear();
     const [year, setYear] = useState(currentYear);
-    const [months, setMonths] = useState<MonthDraft[]>(() => {
-        const d = buildYearDrafts();
-        // Örnek: Temmuz (index 6) — senin 132.000 senaryon
-        d[6] = {
-            grossInput: '132000',
-            kdvPaidInput: '',
-            kdvDeductibleInput: '',
-            note: 'Örnek taslak veri'
-        };
-        return d;
-    });
-    const [openMonth, setOpenMonth] = useState<number | null>(6);
+    const [months, setMonths] = useState<MonthDraft[]>(() => buildYearDrafts());
+    const [openMonth, setOpenMonth] = useState<number | null>(null);
+    const [brackets, setBrackets] = useState<BracketRow[]>(DEFAULT_2026_BRACKETS);
+    const [presets, setPresets] = useState<KdvPreset[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [savingMonth, setSavingMonth] = useState<number | null>(null);
+    const [savingSettings, setSavingSettings] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [status, setStatus] = useState<string | null>(null);
+
+    const loadYear = useCallback(async (y: number) => {
+        setLoading(true);
+        setError(null);
+        setStatus(null);
+
+        const [entriesRes, bracketsRes, presetsRes] = await Promise.all([
+            supabase
+                .from('company_finance_monthly_entries')
+                .select('*')
+                .eq('year', y)
+                .order('month'),
+            supabase
+                .from('company_finance_income_tax_brackets')
+                .select('*')
+                .eq('year', y)
+                .order('sort_order'),
+            supabase
+                .from('company_finance_kdv_presets')
+                .select('*')
+                .order('sort_order')
+        ]);
+
+        if (entriesRes.error || bracketsRes.error || presetsRes.error) {
+            setError(
+                entriesRes.error?.message ||
+                    bracketsRes.error?.message ||
+                    presetsRes.error?.message ||
+                    'Yükleme hatası'
+            );
+            setLoading(false);
+            return;
+        }
+
+        const drafts = buildYearDrafts();
+        const entries = entriesRes.data || [];
+        const entryIds = entries.map((e) => e.id as string);
+
+        let expensesByEntry: Record<string, ExpenseDraft[]> = {};
+        if (entryIds.length > 0) {
+            const expRes = await supabase
+                .from('company_finance_monthly_expenses')
+                .select('*')
+                .in('monthly_entry_id', entryIds)
+                .order('sort_order');
+            if (expRes.error) {
+                setError(expRes.error.message);
+                setLoading(false);
+                return;
+            }
+            for (const row of expRes.data || []) {
+                const eid = row.monthly_entry_id as string;
+                if (!expensesByEntry[eid]) expensesByEntry[eid] = [];
+                expensesByEntry[eid].push({
+                    localId: row.id as string,
+                    dbId: row.id as string,
+                    name: (row.name as string) || '',
+                    amountGross:
+                        row.amount_gross != null ? String(row.amount_gross) : '',
+                    kdvRate: row.kdv_rate != null ? String(row.kdv_rate) : '20',
+                    includeInDeductibleKdv: row.include_in_deductible_kdv !== false,
+                    note: (row.note as string) || ''
+                });
+            }
+        }
+
+        for (const e of entries) {
+            const mi = (e.month as number) - 1;
+            if (mi < 0 || mi > 11) continue;
+            drafts[mi] = {
+                entryId: e.id as string,
+                grossInput: e.gross_amount != null ? String(e.gross_amount) : '',
+                kdvPaidInput: e.kdv_paid != null ? String(e.kdv_paid) : '',
+                kdvDeductibleInput:
+                    e.kdv_deductible != null ? String(e.kdv_deductible) : '',
+                note: (e.note as string) || '',
+                expenses: expensesByEntry[e.id as string] || [],
+                dirty: false
+            };
+        }
+
+        const br = (bracketsRes.data || []).map((b, i) => ({
+            id: b.id as string,
+            min_amount: Number(b.min_amount) || 0,
+            max_amount: b.max_amount == null ? null : Number(b.max_amount),
+            rate_percent: Number(b.rate_percent) || 0,
+            sort_order: b.sort_order != null ? Number(b.sort_order) : i
+        }));
+
+        setMonths(drafts);
+        setBrackets(br.length > 0 ? br : DEFAULT_2026_BRACKETS.map((x) => ({ ...x })));
+        setPresets(
+            (presetsRes.data || []).map((p) => ({
+                id: p.id as string,
+                name: p.name as string,
+                rate_percent: Number(p.rate_percent) || 0,
+                sort_order: Number(p.sort_order) || 0
+            }))
+        );
+        setLoading(false);
+    }, []);
+
+    useEffect(() => {
+        void loadYear(year);
+    }, [year, loadYear]);
+
+    const taxBrackets: TaxBracket[] = useMemo(
+        () =>
+            brackets.map((b) => ({
+                min_amount: b.min_amount,
+                max_amount: b.max_amount,
+                rate_percent: b.rate_percent
+            })),
+        [brackets]
+    );
 
     const resolved = useMemo(() => {
-        /** Veri yoksa son dolu aydaki brüt ile devam (taslak kural) */
-        let lastGross: number | null = null;
         return months.map((m, idx) => {
-            const entered = parseMoney(m.grossInput);
-            const usedFallback = entered === null && lastGross !== null;
-            const gross = entered ?? lastGross;
-            if (entered !== null) lastGross = entered;
+            const future = isFutureMonth(year, idx);
+            const hasRecord =
+                Boolean(m.entryId) ||
+                m.grossInput.trim() !== '' ||
+                m.expenses.length > 0 ||
+                m.kdvPaidInput.trim() !== '' ||
+                m.kdvDeductibleInput.trim() !== '' ||
+                m.note.trim() !== '';
 
-            const lines = gross !== null ? deriveFromGross(gross) : [];
-            const kdvLine = lines.find((l) => l.key === 'vergi');
-            const calculatedKdv = kdvLine?.amount ?? 0;
-            const kdvPaid = parseMoney(m.kdvPaidInput) ?? 0;
-            const kdvDeductible = parseMoney(m.kdvDeductibleInput) ?? 0;
-            const kdvBalance = calculatedKdv - kdvDeductible - kdvPaid;
+            const gross = future && !hasRecord ? 0 : parseMoney(m.grossInput);
+            const sales = salesFromGrossInclusive(gross, SALES_VAT_RATE);
 
-            const deductions = lines
-                .filter((l) => l.effect === 'deduction')
-                .reduce((a, l) => a + l.amount, 0);
-            const additions = lines
-                .filter((l) => l.effect === 'addition')
-                .reduce((a, l) => a + l.amount, 0);
-            const net = (gross ?? 0) - deductions + additions;
+            const expenseRows = m.expenses.map((ex) => {
+                const bd = expenseBreakdown(
+                    parseMoney(ex.amountGross),
+                    parseMoney(ex.kdvRate)
+                );
+                return { ...ex, ...bd };
+            });
+            const expenseNetTotal = expenseRows.reduce((a, r) => a + r.amountNet, 0);
+            const expenseKdvIncluded = expenseRows
+                .filter((r) => r.includeInDeductibleKdv)
+                .reduce((a, r) => a + r.kdvAmount, 0);
+            const expenseKdvAll = expenseRows.reduce((a, r) => a + r.kdvAmount, 0);
+
+            const manualDeductible = parseMoney(m.kdvDeductibleInput);
+            const kdvPaid = parseMoney(m.kdvPaidInput);
+            const totalDeductible = manualDeductible + expenseKdvIncluded;
+            const kdvBalance = sales.salesVat - totalDeductible - kdvPaid;
+
+            const base = future && !hasRecord ? 0 : monthlyTaxableBase(sales.netRevenue, expenseNetTotal);
 
             return {
                 idx,
-                hasOwnData: entered !== null,
-                usedFallback,
-                missing: gross === null,
-                gross: gross ?? 0,
-                lines,
-                calculatedKdv,
+                future,
+                hasRecord,
+                gross,
+                ...sales,
+                expenseRows,
+                expenseNetTotal,
+                expenseKdvIncluded,
+                expenseKdvAll,
                 kdvPaid,
-                kdvDeductible,
+                manualDeductible,
+                totalDeductible,
                 kdvBalance,
-                deductions,
-                additions,
-                net
+                base
             };
         });
-    }, [months]);
+    }, [months, year]);
+
+    const schedule = useMemo(() => {
+        return cumulativeMonthlyTaxSchedule(
+            resolved.map((r) => r.base),
+            resolved.map((r) => r.tevfikat),
+            taxBrackets
+        );
+    }, [resolved, taxBrackets]);
+
+    const yearTax = useMemo(
+        () => progressiveIncomeTax(Math.max(0, schedule.cumulativeBase), taxBrackets),
+        [schedule.cumulativeBase, taxBrackets]
+    );
 
     const yearTotals = useMemo(() => {
-        const withData = resolved.filter((r) => !r.missing);
+        const withData = resolved.filter((r) => r.hasRecord && !r.future);
+        const allRecorded = resolved.filter((r) => r.hasRecord);
         return {
-            monthsFilled: withData.filter((r) => r.hasOwnData).length,
-            gross: withData.reduce((a, r) => a + r.gross, 0),
-            kdv: withData.reduce((a, r) => a + r.calculatedKdv, 0),
-            kdvPaid: withData.reduce((a, r) => a + r.kdvPaid, 0),
-            kdvDeductible: withData.reduce((a, r) => a + r.kdvDeductible, 0)
+            monthsFilled: allRecorded.length,
+            gross: withData.reduce((a, r) => a + r.gross, 0) +
+                resolved.filter((r) => r.hasRecord && r.future).reduce((a, r) => a + r.gross, 0),
+            netRevenue: resolved.reduce((a, r) => a + (r.hasRecord ? r.netRevenue : 0), 0),
+            expenseNet: resolved.reduce((a, r) => a + (r.hasRecord ? r.expenseNetTotal : 0), 0),
+            salesVat: resolved.reduce((a, r) => a + (r.hasRecord ? r.salesVat : 0), 0),
+            tevfikat: schedule.cumulativeTevfikat
         };
-    }, [resolved]);
+    }, [resolved, schedule.cumulativeTevfikat]);
 
     const updateMonth = (idx: number, patch: Partial<MonthDraft>) => {
-        setMonths((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
+        setMonths((prev) =>
+            prev.map((m, i) => (i === idx ? { ...m, ...patch, dirty: true } : m))
+        );
+    };
+
+    const updateExpense = (
+        monthIdx: number,
+        localId: string,
+        patch: Partial<ExpenseDraft>
+    ) => {
+        setMonths((prev) =>
+            prev.map((m, i) => {
+                if (i !== monthIdx) return m;
+                return {
+                    ...m,
+                    dirty: true,
+                    expenses: m.expenses.map((ex) =>
+                        ex.localId === localId ? { ...ex, ...patch } : ex
+                    )
+                };
+            })
+        );
+    };
+
+    const addExpense = (monthIdx: number, rate?: number) => {
+        const defaultRate =
+            rate ??
+            (presets.find((p) => p.name === 'Genel')?.rate_percent ?? 20);
+        setMonths((prev) =>
+            prev.map((m, i) =>
+                i === monthIdx
+                    ? {
+                          ...m,
+                          dirty: true,
+                          expenses: [...m.expenses, emptyExpense(defaultRate)]
+                      }
+                    : m
+            )
+        );
+    };
+
+    const removeExpense = (monthIdx: number, localId: string) => {
+        setMonths((prev) =>
+            prev.map((m, i) =>
+                i === monthIdx
+                    ? {
+                          ...m,
+                          dirty: true,
+                          expenses: m.expenses.filter((ex) => ex.localId !== localId)
+                      }
+                    : m
+            )
+        );
+    };
+
+    const saveMonth = async (idx: number) => {
+        const m = months[idx];
+        setSavingMonth(idx);
+        setError(null);
+        setStatus(null);
+
+        const payload = {
+            year,
+            month: idx + 1,
+            gross_amount: parseMoney(m.grossInput),
+            kdv_paid: parseMoney(m.kdvPaidInput),
+            kdv_deductible: parseMoney(m.kdvDeductibleInput),
+            note: m.note.trim(),
+            updated_at: new Date().toISOString()
+        };
+
+        let entryId = m.entryId;
+        if (entryId) {
+            const { error: upErr } = await supabase
+                .from('company_finance_monthly_entries')
+                .update(payload)
+                .eq('id', entryId);
+            if (upErr) {
+                setError(upErr.message);
+                setSavingMonth(null);
+                return;
+            }
+        } else {
+            const { data, error: inErr } = await supabase
+                .from('company_finance_monthly_entries')
+                .insert([payload])
+                .select('id')
+                .single();
+            if (inErr || !data) {
+                setError(inErr?.message || 'Kayıt oluşturulamadı');
+                setSavingMonth(null);
+                return;
+            }
+            entryId = data.id as string;
+        }
+
+        const { data: existingExp, error: listErr } = await supabase
+            .from('company_finance_monthly_expenses')
+            .select('id')
+            .eq('monthly_entry_id', entryId);
+        if (listErr) {
+            setError(listErr.message);
+            setSavingMonth(null);
+            return;
+        }
+
+        const keepIds = new Set(
+            m.expenses.map((ex) => ex.dbId).filter(Boolean) as string[]
+        );
+        const toDelete = (existingExp || [])
+            .map((r) => r.id as string)
+            .filter((id) => !keepIds.has(id));
+        if (toDelete.length > 0) {
+            const { error: delErr } = await supabase
+                .from('company_finance_monthly_expenses')
+                .delete()
+                .in('id', toDelete);
+            if (delErr) {
+                setError(delErr.message);
+                setSavingMonth(null);
+                return;
+            }
+        }
+
+        const nextExpenses: ExpenseDraft[] = [];
+        for (let i = 0; i < m.expenses.length; i++) {
+            const ex = m.expenses[i];
+            const name = ex.name.trim() || 'Gider';
+            const row = {
+                monthly_entry_id: entryId,
+                name,
+                amount_gross: parseMoney(ex.amountGross),
+                kdv_rate: parseMoney(ex.kdvRate),
+                include_in_deductible_kdv: ex.includeInDeductibleKdv,
+                note: ex.note.trim(),
+                sort_order: i
+            };
+            if (ex.dbId) {
+                const { error: uErr } = await supabase
+                    .from('company_finance_monthly_expenses')
+                    .update(row)
+                    .eq('id', ex.dbId);
+                if (uErr) {
+                    setError(uErr.message);
+                    setSavingMonth(null);
+                    return;
+                }
+                nextExpenses.push({ ...ex, name, dbId: ex.dbId });
+            } else {
+                const { data: created, error: cErr } = await supabase
+                    .from('company_finance_monthly_expenses')
+                    .insert([row])
+                    .select('id')
+                    .single();
+                if (cErr || !created) {
+                    setError(cErr?.message || 'Gider kaydı başarısız');
+                    setSavingMonth(null);
+                    return;
+                }
+                nextExpenses.push({
+                    ...ex,
+                    name,
+                    dbId: created.id as string,
+                    localId: created.id as string
+                });
+            }
+        }
+
+        setMonths((prev) =>
+            prev.map((row, i) =>
+                i === idx
+                    ? {
+                          ...row,
+                          entryId,
+                          expenses: nextExpenses,
+                          dirty: false
+                      }
+                    : row
+            )
+        );
+        setStatus(`${MONTH_LABELS[idx]} kaydedildi`);
+        setSavingMonth(null);
+    };
+
+    const saveBrackets = async () => {
+        setSavingSettings(true);
+        setError(null);
+        const { error: delErr } = await supabase
+            .from('company_finance_income_tax_brackets')
+            .delete()
+            .eq('year', year);
+        if (delErr) {
+            setError(delErr.message);
+            setSavingSettings(false);
+            return;
+        }
+        const rows = brackets.map((b, i) => ({
+            year,
+            min_amount: b.min_amount,
+            max_amount: b.max_amount,
+            rate_percent: b.rate_percent,
+            sort_order: i
+        }));
+        const { data, error: inErr } = await supabase
+            .from('company_finance_income_tax_brackets')
+            .insert(rows)
+            .select('*');
+        if (inErr) {
+            setError(inErr.message);
+            setSavingSettings(false);
+            return;
+        }
+        setBrackets(
+            (data || []).map((b, i) => ({
+                id: b.id as string,
+                min_amount: Number(b.min_amount) || 0,
+                max_amount: b.max_amount == null ? null : Number(b.max_amount),
+                rate_percent: Number(b.rate_percent) || 0,
+                sort_order: i
+            }))
+        );
+        setStatus(`${year} gelir vergisi dilimleri kaydedildi`);
+        setSavingSettings(false);
+    };
+
+    const savePresets = async () => {
+        setSavingSettings(true);
+        setError(null);
+        const { data: existing, error: listErr } = await supabase
+            .from('company_finance_kdv_presets')
+            .select('id');
+        if (listErr) {
+            setError(listErr.message);
+            setSavingSettings(false);
+            return;
+        }
+        const keep = new Set(presets.map((p) => p.id).filter((id) => !id.startsWith('new-')));
+        const toDelete = (existing || [])
+            .map((r) => r.id as string)
+            .filter((id) => !keep.has(id));
+        if (toDelete.length > 0) {
+            const { error: dErr } = await supabase
+                .from('company_finance_kdv_presets')
+                .delete()
+                .in('id', toDelete);
+            if (dErr) {
+                setError(dErr.message);
+                setSavingSettings(false);
+                return;
+            }
+        }
+
+        const next: KdvPreset[] = [];
+        for (let i = 0; i < presets.length; i++) {
+            const p = presets[i];
+            const body = {
+                name: p.name.trim() || 'Oran',
+                rate_percent: p.rate_percent,
+                sort_order: i
+            };
+            if (p.id.startsWith('new-')) {
+                const { data, error: iErr } = await supabase
+                    .from('company_finance_kdv_presets')
+                    .insert([body])
+                    .select('*')
+                    .single();
+                if (iErr || !data) {
+                    setError(iErr?.message || 'Preset kaydı başarısız');
+                    setSavingSettings(false);
+                    return;
+                }
+                next.push({
+                    id: data.id as string,
+                    name: data.name as string,
+                    rate_percent: Number(data.rate_percent) || 0,
+                    sort_order: i
+                });
+            } else {
+                const { error: uErr } = await supabase
+                    .from('company_finance_kdv_presets')
+                    .update(body)
+                    .eq('id', p.id);
+                if (uErr) {
+                    setError(uErr.message);
+                    setSavingSettings(false);
+                    return;
+                }
+                next.push({ ...p, ...body, sort_order: i });
+            }
+        }
+        setPresets(next);
+        setStatus('KDV hazır oranları kaydedildi');
+        setSavingSettings(false);
     };
 
     const years = [currentYear - 1, currentYear, currentYear + 1];
@@ -180,18 +625,31 @@ export default function MonthlyRevenueDraftPage() {
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Aylık kazanç</h2>
                 <p className="text-muted-foreground mt-1">
-                    UI taslağı — SQL yok. Formüller onayından sonra bağlanacak. Ocak’tan itibaren tüm
-                    aylar; veri yoksa son girilen brüt üzerinden hesap devam eder.
+                    Brüt ciro KDV dahil girilir; matrah ve gelir vergisi KDV hariç hesaplanır.
+                    Kayıt yok veya henüz gelmemiş aylar 0 sayılır. Tevfikat (satış KDV × %
+                    {TEVFIKAT_OF_VAT_PERCENT}) peşin vergi olarak GV’den mahsup edilir.
                 </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-secondary/20 px-4 py-3 text-sm text-muted-foreground">
                 <Info className="w-4 h-4 shrink-0" />
                 <p>
-                    Taslak formül şu an sabit: Brüt → ÷1.2 birim fiyat → KDV → net gelir → tevfikat
-                    %20. Sen formülleri verdikten sonra burası Formüller modülüne bağlanacak.
+                    Satış KDV %{SALES_VAT_RATE}. Gider tutarı KDV dahil; oran hazır listeden veya
+                    serbest. “İndirilecek KDV’ye dahil” açık giderlerin KDV’si aylık indirilecek
+                    havuza eklenir.
                 </p>
             </div>
+
+            {error && (
+                <p className="text-sm text-red-400 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+                    {error}
+                </p>
+            )}
+            {status && (
+                <p className="text-sm text-emerald-300/90 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                    {status}
+                </p>
+            )}
 
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
@@ -214,268 +672,772 @@ export default function MonthlyRevenueDraftPage() {
                         <dd className="font-medium tabular-nums">{yearTotals.monthsFilled}/12</dd>
                     </div>
                     <div>
-                        <dt className="text-xs text-muted-foreground">Yıllık brüt*</dt>
-                        <dd className="font-medium tabular-nums">{fmtMoney(yearTotals.gross)}</dd>
+                        <dt className="text-xs text-muted-foreground">Yıllık matrah</dt>
+                        <dd className="font-medium tabular-nums">
+                            {fmtMoney(Math.max(0, schedule.cumulativeBase))}
+                        </dd>
                     </div>
                     <div>
-                        <dt className="text-xs text-muted-foreground">Hesaplanan KDV*</dt>
-                        <dd className="font-medium tabular-nums">{fmtMoney(yearTotals.kdv)}</dd>
+                        <dt className="text-xs text-muted-foreground">Hesaplanan GV</dt>
+                        <dd className="font-medium tabular-nums">
+                            {fmtMoney(schedule.cumulativeGv)}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt className="text-xs text-muted-foreground">Tevfikat (peşin)</dt>
+                        <dd className="font-medium tabular-nums">
+                            {fmtMoney(schedule.cumulativeTevfikat)}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt className="text-xs text-muted-foreground">Kalan GV</dt>
+                        <dd className="font-medium tabular-nums">
+                            {fmtMoney(schedule.gvDueAfterTevfikat)}
+                        </dd>
                     </div>
                 </dl>
             </div>
-            <p className="text-[11px] text-muted-foreground -mt-4">
-                * Yıllık toplamda fallback ile doldurulan aylar da sayılır (taslak davranış).
-            </p>
 
-            <ul className="divide-y divide-border border border-border rounded-xl overflow-hidden">
-                {resolved.map((r) => {
-                    const open = openMonth === r.idx;
-                    const draft = months[r.idx];
-                    return (
-                        <li key={r.idx} className="bg-background">
-                            <button
-                                type="button"
-                                onClick={() => setOpenMonth(open ? null : r.idx)}
-                                className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-secondary/30 transition-colors"
-                            >
-                                {open ? (
-                                    <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                                ) : (
-                                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-medium">
-                                            {MONTH_LABELS[r.idx]} {year}
-                                        </span>
-                                        {r.missing && (
-                                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground">
-                                                veri yok
-                                            </span>
+            <div className="rounded-xl border border-border overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setSettingsOpen((o) => !o)}
+                    className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-secondary/30"
+                >
+                    {settingsOpen ? (
+                        <ChevronDown className="w-4 h-4" />
+                    ) : (
+                        <ChevronRight className="w-4 h-4" />
+                    )}
+                    Vergi dilimleri ve KDV hazır oranları ({year})
+                </button>
+                {settingsOpen && (
+                    <div className="border-t border-border px-4 py-4 space-y-6 bg-secondary/10">
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <h3 className="text-sm font-semibold">Gelir vergisi dilimleri</h3>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setBrackets((prev) => [
+                                                ...prev,
+                                                {
+                                                    min_amount: 0,
+                                                    max_amount: null,
+                                                    rate_percent: 15
+                                                }
+                                            ])
+                                        }
+                                        className="text-xs inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-secondary"
+                                    >
+                                        <Plus className="w-3 h-3" /> Dilim
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={savingSettings}
+                                        onClick={() => void saveBrackets()}
+                                        className="text-xs inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-secondary disabled:opacity-50"
+                                    >
+                                        {savingSettings ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                            <Save className="w-3 h-3" />
                                         )}
-                                        {r.usedFallback && (
-                                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-200/90">
-                                                önceki brüt
-                                            </span>
-                                        )}
-                                        {r.hasOwnData && (
-                                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-300/90">
-                                                girilmiş
-                                            </span>
-                                        )}
-                                    </div>
+                                        Kaydet
+                                    </button>
                                 </div>
-                                <div className="text-right shrink-0">
-                                    <p className="text-xs text-muted-foreground">Brüt</p>
-                                    <p className="font-medium tabular-nums text-sm">
-                                        {r.missing ? '—' : fmtMoney(r.gross)}
-                                    </p>
-                                </div>
-                                <div className="text-right shrink-0 hidden sm:block w-28">
-                                    <p className="text-xs text-muted-foreground">KDV</p>
-                                    <p className="font-medium tabular-nums text-sm">
-                                        {r.missing ? '—' : fmtMoney(r.calculatedKdv)}
-                                    </p>
-                                </div>
-                            </button>
+                            </div>
+                            <ul className="space-y-2">
+                                {brackets.map((b, i) => (
+                                    <li
+                                        key={b.id || `b-${i}`}
+                                        className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end"
+                                    >
+                                        <div>
+                                            <label className="text-[10px] text-muted-foreground">
+                                                Alt
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={b.min_amount}
+                                                onChange={(e) =>
+                                                    setBrackets((prev) =>
+                                                        prev.map((x, j) =>
+                                                            j === i
+                                                                ? {
+                                                                      ...x,
+                                                                      min_amount:
+                                                                          Number(e.target.value) ||
+                                                                          0
+                                                                  }
+                                                                : x
+                                                        )
+                                                    )
+                                                }
+                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-muted-foreground">
+                                                Üst (boş = ∞)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={b.max_amount ?? ''}
+                                                onChange={(e) =>
+                                                    setBrackets((prev) =>
+                                                        prev.map((x, j) =>
+                                                            j === i
+                                                                ? {
+                                                                      ...x,
+                                                                      max_amount:
+                                                                          e.target.value === ''
+                                                                              ? null
+                                                                              : Number(
+                                                                                    e.target.value
+                                                                                ) || 0
+                                                                  }
+                                                                : x
+                                                        )
+                                                    )
+                                                }
+                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-muted-foreground">
+                                                Oran %
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={b.rate_percent}
+                                                onChange={(e) =>
+                                                    setBrackets((prev) =>
+                                                        prev.map((x, j) =>
+                                                            j === i
+                                                                ? {
+                                                                      ...x,
+                                                                      rate_percent:
+                                                                          Number(e.target.value) ||
+                                                                          0
+                                                                  }
+                                                                : x
+                                                        )
+                                                    )
+                                                }
+                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setBrackets((prev) =>
+                                                    prev.filter((_, j) => j !== i)
+                                                )
+                                            }
+                                            className="justify-self-start sm:justify-self-end p-2 text-muted-foreground hover:text-red-400"
+                                            aria-label="Dilim sil"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            {yearTax.slices.length > 0 && (
+                                <dl className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-border">
+                                    {yearTax.slices.map((s, i) => (
+                                        <div key={i} className="flex justify-between gap-2">
+                                            <dt>
+                                                {fmtMoney(s.min)} –{' '}
+                                                {s.max == null ? '∞' : fmtMoney(s.max)} (%{s.rate})
+                                            </dt>
+                                            <dd className="tabular-nums">
+                                                {fmtMoney(s.taxInSlice)}
+                                            </dd>
+                                        </div>
+                                    ))}
+                                </dl>
+                            )}
+                        </div>
 
-                            {open && (
-                                <div className="px-4 pb-5 pt-1 space-y-6 border-t border-border/60 bg-secondary/10">
-                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                        <div>
-                                            <label className="block text-xs text-muted-foreground mb-1">
-                                                Brüt ciro (KDV dahil)
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <h3 className="text-sm font-semibold">KDV hazır oranları</h3>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setPresets((prev) => [
+                                                ...prev,
+                                                {
+                                                    id: `new-${crypto.randomUUID()}`,
+                                                    name: '',
+                                                    rate_percent: 20,
+                                                    sort_order: prev.length
+                                                }
+                                            ])
+                                        }
+                                        className="text-xs inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-secondary"
+                                    >
+                                        <Plus className="w-3 h-3" /> Oran
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={savingSettings}
+                                        onClick={() => void savePresets()}
+                                        className="text-xs inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-secondary disabled:opacity-50"
+                                    >
+                                        {savingSettings ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                            <Save className="w-3 h-3" />
+                                        )}
+                                        Kaydet
+                                    </button>
+                                </div>
+                            </div>
+                            <ul className="space-y-2">
+                                {presets.map((p, i) => (
+                                    <li key={p.id} className="flex flex-wrap gap-2 items-end">
+                                        <div className="flex-1 min-w-[8rem]">
+                                            <label className="text-[10px] text-muted-foreground">
+                                                Ad
                                             </label>
                                             <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                placeholder="Boş = önceki ay"
-                                                value={draft.grossInput}
+                                                value={p.name}
                                                 onChange={(e) =>
-                                                    updateMonth(r.idx, {
-                                                        grossInput: e.target.value
-                                                    })
+                                                    setPresets((prev) =>
+                                                        prev.map((x, j) =>
+                                                            j === i
+                                                                ? { ...x, name: e.target.value }
+                                                                : x
+                                                        )
+                                                    )
                                                 }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs text-muted-foreground mb-1">
-                                                Ödenen KDV
+                                        <div className="w-24">
+                                            <label className="text-[10px] text-muted-foreground">
+                                                %
                                             </label>
                                             <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                placeholder="0"
-                                                value={draft.kdvPaidInput}
+                                                type="number"
+                                                value={p.rate_percent}
                                                 onChange={(e) =>
-                                                    updateMonth(r.idx, {
-                                                        kdvPaidInput: e.target.value
-                                                    })
+                                                    setPresets((prev) =>
+                                                        prev.map((x, j) =>
+                                                            j === i
+                                                                ? {
+                                                                      ...x,
+                                                                      rate_percent:
+                                                                          Number(e.target.value) ||
+                                                                          0
+                                                                  }
+                                                                : x
+                                                        )
+                                                    )
                                                 }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs text-muted-foreground mb-1">
-                                                İndirilecek KDV
-                                            </label>
-                                            <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                placeholder="0"
-                                                value={draft.kdvDeductibleInput}
-                                                onChange={(e) =>
-                                                    updateMonth(r.idx, {
-                                                        kdvDeductibleInput: e.target.value
-                                                    })
-                                                }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-muted-foreground mb-1">
-                                                Not
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={draft.note}
-                                                onChange={(e) =>
-                                                    updateMonth(r.idx, { note: e.target.value })
-                                                }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                                            />
-                                        </div>
-                                    </div>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setPresets((prev) =>
+                                                    prev.filter((_, j) => j !== i)
+                                                )
+                                            }
+                                            className="p-2 text-muted-foreground hover:text-red-400"
+                                            aria-label="Oran sil"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                )}
+            </div>
 
-                                    {r.missing ? (
-                                        <p className="text-sm text-muted-foreground">
-                                            Bu ay ve öncesinde brüt yok — hesaplanacak veri bekleniyor.
-                                        </p>
+            {loading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Yükleniyor…
+                </div>
+            ) : (
+                <ul className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+                    {resolved.map((r) => {
+                        const open = openMonth === r.idx;
+                        const draft = months[r.idx];
+                        const cum = schedule.months[r.idx];
+                        return (
+                            <li key={r.idx} className="bg-background">
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenMonth(open ? null : r.idx)}
+                                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-secondary/30 transition-colors"
+                                >
+                                    {open ? (
+                                        <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
                                     ) : (
-                                        <>
-                                            <div className="space-y-2">
+                                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-medium">
+                                                {MONTH_LABELS[r.idx]} {year}
+                                            </span>
+                                            {r.future && !r.hasRecord && (
+                                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground">
+                                                    gelecek · 0
+                                                </span>
+                                            )}
+                                            {!r.hasRecord && !r.future && (
+                                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground">
+                                                    veri yok · 0
+                                                </span>
+                                            )}
+                                            {r.hasRecord && (
+                                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-300/90">
+                                                    kayıtlı
+                                                </span>
+                                            )}
+                                            {draft.dirty && (
+                                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-200/90">
+                                                    kaydedilmedi
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <p className="text-xs text-muted-foreground">Brüt</p>
+                                        <p className="font-medium tabular-nums text-sm">
+                                            {fmtMoney(r.gross)}
+                                        </p>
+                                    </div>
+                                    <div className="text-right shrink-0 hidden sm:block w-28">
+                                        <p className="text-xs text-muted-foreground">Matrah</p>
+                                        <p className="font-medium tabular-nums text-sm">
+                                            {fmtMoney(r.base)}
+                                        </p>
+                                    </div>
+                                    <div className="text-right shrink-0 hidden md:block w-28">
+                                        <p className="text-xs text-muted-foreground">
+                                            Küm. GV
+                                        </p>
+                                        <p className="font-medium tabular-nums text-sm">
+                                            {fmtMoney(cum?.cumulativeGv ?? 0)}
+                                        </p>
+                                    </div>
+                                </button>
+
+                                {open && (
+                                    <div className="px-4 pb-5 pt-1 space-y-6 border-t border-border/60 bg-secondary/10">
+                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    Brüt ciro (KDV dahil)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    placeholder="0"
+                                                    value={draft.grossInput}
+                                                    onChange={(e) =>
+                                                        updateMonth(r.idx, {
+                                                            grossInput: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    Ödenen KDV
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    placeholder="0"
+                                                    value={draft.kdvPaidInput}
+                                                    onChange={(e) =>
+                                                        updateMonth(r.idx, {
+                                                            kdvPaidInput: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    İndirilecek KDV (manuel)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    placeholder="0"
+                                                    value={draft.kdvDeductibleInput}
+                                                    onChange={(e) =>
+                                                        updateMonth(r.idx, {
+                                                            kdvDeductibleInput: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    Not
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={draft.note}
+                                                    onChange={(e) =>
+                                                        updateMonth(r.idx, {
+                                                            note: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
                                                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Formül özeti (taslak)
+                                                    Giderler
                                                 </h4>
-                                                <dl className="space-y-2 text-sm rounded-lg border border-border bg-background px-4 py-3">
-                                                    <div className="flex justify-between gap-4">
-                                                        <dt className="text-muted-foreground">Brüt</dt>
-                                                        <dd className="font-medium tabular-nums">
-                                                            {fmtMoney(r.gross)}
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {presets.map((p) => (
+                                                        <button
+                                                            key={p.id}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                addExpense(r.idx, p.rate_percent)
+                                                            }
+                                                            className="text-[11px] rounded-md border border-border px-2 py-1 hover:bg-secondary"
+                                                        >
+                                                            + {p.name} %{p.rate_percent}
+                                                        </button>
+                                                    ))}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addExpense(r.idx)}
+                                                        className="text-[11px] inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-secondary"
+                                                    >
+                                                        <Plus className="w-3 h-3" /> Gider
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {draft.expenses.length === 0 ? (
+                                                <p className="text-sm text-muted-foreground">
+                                                    Henüz gider yok. Benzin, yemek vb. ekleyebilirsin.
+                                                </p>
+                                            ) : (
+                                                <ul className="space-y-3">
+                                                    {draft.expenses.map((ex) => {
+                                                        const bd = expenseBreakdown(
+                                                            parseMoney(ex.amountGross),
+                                                            parseMoney(ex.kdvRate)
+                                                        );
+                                                        return (
+                                                            <li
+                                                                key={ex.localId}
+                                                                className="rounded-lg border border-border bg-background p-3 space-y-2"
+                                                            >
+                                                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                                                    <div>
+                                                                        <label className="text-[10px] text-muted-foreground">
+                                                                            Ad
+                                                                        </label>
+                                                                        <input
+                                                                            value={ex.name}
+                                                                            placeholder="Benzin"
+                                                                            onChange={(e) =>
+                                                                                updateExpense(
+                                                                                    r.idx,
+                                                                                    ex.localId,
+                                                                                    {
+                                                                                        name: e
+                                                                                            .target
+                                                                                            .value
+                                                                                    }
+                                                                                )
+                                                                            }
+                                                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-[10px] text-muted-foreground">
+                                                                            Tutar (KDV dahil)
+                                                                        </label>
+                                                                        <input
+                                                                            value={ex.amountGross}
+                                                                            inputMode="decimal"
+                                                                            onChange={(e) =>
+                                                                                updateExpense(
+                                                                                    r.idx,
+                                                                                    ex.localId,
+                                                                                    {
+                                                                                        amountGross:
+                                                                                            e.target
+                                                                                                .value
+                                                                                    }
+                                                                                )
+                                                                            }
+                                                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-[10px] text-muted-foreground">
+                                                                            KDV %
+                                                                        </label>
+                                                                        <div className="flex gap-1">
+                                                                            <input
+                                                                                value={ex.kdvRate}
+                                                                                inputMode="decimal"
+                                                                                onChange={(e) =>
+                                                                                    updateExpense(
+                                                                                        r.idx,
+                                                                                        ex.localId,
+                                                                                        {
+                                                                                            kdvRate:
+                                                                                                e
+                                                                                                    .target
+                                                                                                    .value
+                                                                                        }
+                                                                                    )
+                                                                                }
+                                                                                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                                                            />
+                                                                            {presets.length > 0 && (
+                                                                                <select
+                                                                                    value=""
+                                                                                    onChange={(e) => {
+                                                                                        if (
+                                                                                            !e.target
+                                                                                                .value
+                                                                                        )
+                                                                                            return;
+                                                                                        updateExpense(
+                                                                                            r.idx,
+                                                                                            ex.localId,
+                                                                                            {
+                                                                                                kdvRate:
+                                                                                                    e
+                                                                                                        .target
+                                                                                                        .value
+                                                                                            }
+                                                                                        );
+                                                                                    }}
+                                                                                    className="rounded-md border border-border bg-background text-xs max-w-[5.5rem]"
+                                                                                    aria-label="Hazır oran"
+                                                                                >
+                                                                                    <option value="">
+                                                                                        Hazır
+                                                                                    </option>
+                                                                                    {presets.map(
+                                                                                        (p) => (
+                                                                                            <option
+                                                                                                key={
+                                                                                                    p.id
+                                                                                                }
+                                                                                                value={String(
+                                                                                                    p.rate_percent
+                                                                                                )}
+                                                                                            >
+                                                                                                {p.name}{' '}
+                                                                                                %
+                                                                                                {
+                                                                                                    p.rate_percent
+                                                                                                }
+                                                                                            </option>
+                                                                                        )
+                                                                                    )}
+                                                                                </select>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-end justify-between gap-2">
+                                                                        <label className="flex items-center gap-2 text-xs text-muted-foreground pb-1.5">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={
+                                                                                    ex.includeInDeductibleKdv
+                                                                                }
+                                                                                onChange={(e) =>
+                                                                                    updateExpense(
+                                                                                        r.idx,
+                                                                                        ex.localId,
+                                                                                        {
+                                                                                            includeInDeductibleKdv:
+                                                                                                e
+                                                                                                    .target
+                                                                                                    .checked
+                                                                                        }
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                            İndirilecek KDV
+                                                                        </label>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                removeExpense(
+                                                                                    r.idx,
+                                                                                    ex.localId
+                                                                                )
+                                                                            }
+                                                                            className="p-1.5 text-muted-foreground hover:text-red-400"
+                                                                            aria-label="Gider sil"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-[11px] text-muted-foreground tabular-nums">
+                                                                    Net {fmtMoney(bd.amountNet)} ·
+                                                                    KDV {fmtMoney(bd.kdvAmount)}
+                                                                </p>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </div>
+
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">
+                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    Özet (KDV hariç matrah)
+                                                </h4>
+                                                <dl className="space-y-1.5 text-sm">
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            Net ciro
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.netRevenue)}
                                                         </dd>
                                                     </div>
-                                                    {r.lines.map((line) => (
-                                                        <div
-                                                            key={line.key}
-                                                            className="flex justify-between gap-4 items-start opacity-80"
-                                                        >
-                                                            <dt className="min-w-0">
-                                                                <span>{line.label}</span>
-                                                                <span className="ml-2 text-[10px] uppercase text-muted-foreground">
-                                                                    dahil değil
-                                                                </span>
-                                                                <span className="block text-xs font-mono text-muted-foreground mt-0.5">
-                                                                    {line.note}
-                                                                </span>
-                                                            </dt>
-                                                            <dd className="tabular-nums shrink-0 text-muted-foreground">
-                                                                {fmtMoney(line.amount)}
-                                                            </dd>
-                                                        </div>
-                                                    ))}
-                                                    <div className="flex justify-between gap-4 pt-2 border-t border-border">
+                                                    <div className="flex justify-between gap-2">
                                                         <dt className="text-muted-foreground">
-                                                            Toplam kesinti
+                                                            Satış KDV
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.salesVat)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            Tevfikat (peşin)
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.tevfikat)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            Gider (net)
                                                         </dt>
                                                         <dd className="tabular-nums text-red-400">
-                                                            −{fmtMoney(r.deductions)}
+                                                            −{fmtMoney(r.expenseNetTotal)}
                                                         </dd>
                                                     </div>
-                                                    <div className="flex justify-between gap-4 text-base">
-                                                        <dt className="font-semibold">Net</dt>
-                                                        <dd className="font-bold tabular-nums">
-                                                            {fmtMoney(r.net)}
+                                                    <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
+                                                        <dt className="font-medium">Aylık matrah</dt>
+                                                        <dd className="font-medium tabular-nums">
+                                                            {fmtMoney(r.base)}
                                                         </dd>
                                                     </div>
                                                 </dl>
                                             </div>
 
-                                            <div className="grid gap-4 md:grid-cols-2">
-                                                <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">
-                                                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                                        KDV takibi
-                                                    </h4>
-                                                    <dl className="space-y-1.5 text-sm">
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt className="text-muted-foreground">
-                                                                Hesaplanan
-                                                            </dt>
-                                                            <dd className="tabular-nums">
-                                                                {fmtMoney(r.calculatedKdv)}
-                                                            </dd>
-                                                        </div>
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt className="text-muted-foreground">
-                                                                İndirilecek
-                                                            </dt>
-                                                            <dd className="tabular-nums">
-                                                                {fmtMoney(r.kdvDeductible)}
-                                                            </dd>
-                                                        </div>
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt className="text-muted-foreground">
-                                                                Ödenen
-                                                            </dt>
-                                                            <dd className="tabular-nums">
-                                                                {fmtMoney(r.kdvPaid)}
-                                                            </dd>
-                                                        </div>
-                                                        <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
-                                                            <dt className="font-medium">Bakiye*</dt>
-                                                            <dd className="font-medium tabular-nums">
-                                                                {fmtMoney(r.kdvBalance)}
-                                                            </dd>
-                                                        </div>
-                                                    </dl>
-                                                    <p className="text-[11px] text-muted-foreground">
-                                                        * Hesaplanan − indirilecek − ödenen (taslak)
-                                                    </p>
-                                                </div>
-
-                                                <div className="rounded-lg border border-dashed border-border bg-background/50 px-4 py-3 space-y-2">
-                                                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                                        Gelir vergisi (detaylı)
-                                                    </h4>
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Placeholder — matrah dilimleri, istisna,
-                                                        peşin vergi vb. formüllerini verdikten sonra
-                                                        buraya bağlanacak.
-                                                    </p>
-                                                    <dl className="space-y-1.5 text-sm opacity-50">
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt>Matrah</dt>
-                                                            <dd className="tabular-nums">—</dd>
-                                                        </div>
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt>Hesaplanan GV</dt>
-                                                            <dd className="tabular-nums">—</dd>
-                                                        </div>
-                                                        <div className="flex justify-between gap-2">
-                                                            <dt>Ödenen / mahsup</dt>
-                                                            <dd className="tabular-nums">—</dd>
-                                                        </div>
-                                                    </dl>
-                                                </div>
+                                            <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">
+                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    KDV takibi + kümülatif GV
+                                                </h4>
+                                                <dl className="space-y-1.5 text-sm">
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            İndirilecek (toplam)
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.totalDeductible)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            Ödenen
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.kdvPaid)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            KDV bakiye
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(r.kdvBalance)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
+                                                        <dt className="text-muted-foreground">
+                                                            Yıl başı → bu ay GV
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(cum?.cumulativeGv ?? 0)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="text-muted-foreground">
+                                                            Bu aya düşen GV
+                                                        </dt>
+                                                        <dd className="tabular-nums">
+                                                            {fmtMoney(cum?.monthGvDelta ?? 0)}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex justify-between gap-2">
+                                                        <dt className="font-medium">
+                                                            Kalan GV (tevfikat sonrası)
+                                                        </dt>
+                                                        <dd className="font-medium tabular-nums">
+                                                            {fmtMoney(
+                                                                cum?.gvDueAfterTevfikat ?? 0
+                                                            )}
+                                                        </dd>
+                                                    </div>
+                                                </dl>
                                             </div>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </li>
-                    );
-                })}
-            </ul>
+                                        </div>
+
+                                        <div className="flex justify-end">
+                                            <button
+                                                type="button"
+                                                disabled={savingMonth === r.idx}
+                                                onClick={() => void saveMonth(r.idx)}
+                                                className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                                            >
+                                                {savingMonth === r.idx ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <Save className="w-4 h-4" />
+                                                )}
+                                                Ayı kaydet
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
         </div>
     );
 }

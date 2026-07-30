@@ -4,6 +4,10 @@ import { getServerAdminPassword } from '@/lib/admin-auth';
 import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 const TABLES = [
+    'company_finance_monthly_expenses',
+    'company_finance_monthly_entries',
+    'company_finance_income_tax_brackets',
+    'company_finance_kdv_presets',
     'company_finance_calc_lines',
     'ecosystem_items',
     'domains',

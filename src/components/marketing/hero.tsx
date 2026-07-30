@@ -41,7 +41,7 @@ export function Hero() {
                         href="#iletisim"
                         className="inline-flex items-center justify-center rounded-md border border-white/15 px-6 py-3 text-sm font-medium text-[#E8EAED] transition hover:border-white/30 hover:bg-white/5"
                     >
-                        İletişime geç
+                        Mesaj yazın
                     </a>
                 </div>
             </div>

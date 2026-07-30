@@ -15,10 +15,12 @@ import {
     Blocks,
     ChevronDown,
     ChevronRight,
-    Wallet
+    Wallet,
+    Mail
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
+import { UnreadBadge, useUnreadContactCount } from '@/hooks/use-unread-contact-count';
 
 export interface NavLinkItem {
     id: string;
@@ -51,6 +53,7 @@ function pathActive(pathname: string, href: string): boolean {
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { count: unreadMessages } = useUnreadContactCount();
     const companyFinanceActive = COMPANY_FINANCE_NAV_ITEMS.some((item) =>
         pathActive(pathname, item.href)
     );
@@ -80,6 +83,15 @@ export function Sidebar() {
                 <Link href="/app/dashboard" className={linkClass('/app/dashboard')}>
                     <LayoutDashboard className="w-5 h-5 shrink-0" />
                     <span>Dashboard</span>
+                </Link>
+
+                <Link
+                    href="/app/dashboard/messages"
+                    className={linkClass('/app/dashboard/messages')}
+                >
+                    <Mail className="w-5 h-5 shrink-0" />
+                    <span>Mesajlar</span>
+                    <UnreadBadge count={unreadMessages} />
                 </Link>
 
                 <Link href="/app/dashboard/projects" className={linkClass('/app/dashboard/projects')}>

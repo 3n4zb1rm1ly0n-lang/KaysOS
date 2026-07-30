@@ -15,10 +15,12 @@ import {
     Building2,
     Blocks,
     ChevronDown,
-    ChevronRight
+    ChevronRight,
+    Mail
 } from 'lucide-react';
 import { COMPANY_FINANCE_NAV_ITEMS } from './sidebar';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
+import { UnreadBadge, useUnreadContactCount } from '@/hooks/use-unread-contact-count';
 
 function pathActive(pathname: string, href: string): boolean {
     if (pathname === href) return true;
@@ -29,6 +31,7 @@ function pathActive(pathname: string, href: string): boolean {
 export function MobileNav() {
     const [isOpen, setIsOpen] = useState(false);
     const pathname = usePathname();
+    const { count: unreadMessages } = useUnreadContactCount();
     const companyFinanceActive = COMPANY_FINANCE_NAV_ITEMS.some((item) =>
         pathActive(pathname, item.href)
     );
@@ -86,6 +89,16 @@ export function MobileNav() {
                             <Link href="/app/dashboard" onClick={close} className={itemClass('/app/dashboard')}>
                                 <LayoutDashboard className="w-5 h-5 shrink-0" />
                                 <span>Dashboard</span>
+                            </Link>
+
+                            <Link
+                                href="/app/dashboard/messages"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/messages')}
+                            >
+                                <Mail className="w-5 h-5 shrink-0" />
+                                <span>Mesajlar</span>
+                                <UnreadBadge count={unreadMessages} />
                             </Link>
 
                             <Link

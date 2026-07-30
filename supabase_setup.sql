@@ -222,6 +222,31 @@ create table if not exists ecosystem_items (
 -- Örnek seed: create_ecosystem_items.sql dosyasına bakın (8 kayıt)
 
 -- -----------------------------------------------------------------------------
+-- 5c) Site iletişim mesajları
+-- -----------------------------------------------------------------------------
+create table if not exists contact_messages (
+  id uuid default uuid_generate_v4() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  name text not null default '',
+  email text,
+  phone text,
+  message text not null,
+  source text not null default 'contact',
+  is_read boolean not null default false,
+  constraint contact_messages_email_or_phone check (
+    (email is not null and length(trim(email)) > 0)
+    or (phone is not null and length(trim(phone)) > 0)
+  )
+);
+
+create index if not exists contact_messages_created_at_idx
+  on contact_messages (created_at desc);
+
+create index if not exists contact_messages_unread_idx
+  on contact_messages (is_read)
+  where is_read = false;
+
+-- -----------------------------------------------------------------------------
 -- 6) RLS — anon key ile panel/vitrin (geliştirme; panel cookie ile korunuyor)
 -- -----------------------------------------------------------------------------
 alter table projects enable row level security;
@@ -234,6 +259,7 @@ alter table company_finance_monthly_expenses enable row level security;
 alter table company_finance_income_tax_brackets enable row level security;
 alter table company_finance_kdv_presets enable row level security;
 alter table ecosystem_items enable row level security;
+alter table contact_messages enable row level security;
 
 drop policy if exists "Enable access to all users" on projects;
 create policy "Enable access to all users" on projects for all using (true) with check (true);
@@ -264,6 +290,27 @@ create policy "Enable access to all users" on company_finance_kdv_presets for al
 
 drop policy if exists "Enable access to all users" on ecosystem_items;
 create policy "Enable access to all users" on ecosystem_items for all using (true) with check (true);
+
+drop policy if exists "Public insert contact messages" on contact_messages;
+create policy "Public insert contact messages"
+  on contact_messages for insert
+  with check (true);
+
+drop policy if exists "Auth read contact messages" on contact_messages;
+create policy "Auth read contact messages"
+  on contact_messages for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "Auth update contact messages" on contact_messages;
+create policy "Auth update contact messages"
+  on contact_messages for update
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+drop policy if exists "Auth delete contact messages" on contact_messages;
+create policy "Auth delete contact messages"
+  on contact_messages for delete
+  using (auth.role() = 'authenticated');
 
 -- -----------------------------------------------------------------------------
 -- 7) Proje görselleri (Storage)

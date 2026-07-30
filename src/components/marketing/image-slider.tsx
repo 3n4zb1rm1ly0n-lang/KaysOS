@@ -29,32 +29,36 @@ export function ImageSlider({
         return () => window.clearInterval(t);
     }, [list.length]);
 
-    if (list.length === 0) {
-        return (
-            <div className={`relative overflow-hidden bg-gradient-to-b from-white/[0.06] to-transparent ${className}`}>
-                {overlay}
-            </div>
-        );
-    }
-
     const go = (dir: -1 | 1) => {
         setIndex((i) => (i + dir + list.length) % list.length);
     };
 
+    const hasImages = list.length > 0;
+
     return (
-        <div className={`relative overflow-hidden bg-[#0a0d11] ${className}`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-                src={list[index]}
-                alt={alt}
-                className="absolute inset-0 h-full w-full object-cover transition-opacity duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0d11]/85 via-[#0a0d11]/25 to-transparent" />
+        <div
+            className={`relative overflow-hidden ${
+                hasImages ? 'bg-[#0a0d11]' : 'bg-gradient-to-b from-white/[0.06] to-transparent'
+            } ${className}`}
+        >
+            {hasImages && (
+                <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={list[index]}
+                        alt={alt}
+                        className="absolute inset-0 h-full w-full object-cover transition-opacity duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a0d11]/85 via-[#0a0d11]/25 to-transparent" />
+                </>
+            )}
+
             {overlay && (
-                <div className="relative z-10 flex h-full items-center justify-center p-6">
+                <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
                     {overlay}
                 </div>
             )}
+
             {list.length > 1 && (
                 <>
                     <button

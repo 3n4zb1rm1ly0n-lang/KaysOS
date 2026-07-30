@@ -6,24 +6,8 @@ import type { ShowcaseProject } from '@/lib/marketing-types';
 import { parseShowcaseGallery, parseShowcaseLinks } from '@/lib/marketing-types';
 import type { EcosystemItem } from '@/lib/ecosystem-types';
 import { ECOSYSTEM_KIND_LABELS, parseEcosystemLinks } from '@/lib/ecosystem-types';
-import { extractHostname } from '@/lib/hostname';
 import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
 import { ImageSlider } from '@/components/marketing/image-slider';
-
-function siteUrl(p: ShowcaseProject): string | null {
-    if (p.use_domain && p.domain_detail) {
-        const host = extractHostname(p.domain_detail);
-        return host ? `https://${host}` : null;
-    }
-    return null;
-}
-
-function siteHostLabel(p: ShowcaseProject): string | null {
-    if (p.use_domain && p.domain_detail) {
-        return extractHostname(p.domain_detail);
-    }
-    return null;
-}
 
 function DetailModal({
     title,
@@ -32,8 +16,6 @@ function DetailModal({
     logoUrl,
     gallery,
     links,
-    siteHref,
-    siteLabel,
     badge,
     onClose
 }: {
@@ -43,8 +25,6 @@ function DetailModal({
     logoUrl?: string | null;
     gallery?: string[];
     links: { label: string; url: string }[];
-    siteHref?: string | null;
-    siteLabel?: string | null;
     badge?: string;
     onClose: () => void;
 }) {
@@ -119,33 +99,6 @@ function DetailModal({
                 </div>
 
                 <div className="overflow-y-auto px-5 py-5 space-y-5">
-                    {siteHref && (
-                        <a
-                            href={siteHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between gap-3 rounded-xl border border-[#1A9B8E]/35 bg-[#1A9B8E]/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-[#1A9B8E]/20"
-                        >
-                            <span className="truncate">
-                                Siteyi aç
-                                {siteLabel ? (
-                                    <span className="ml-2 font-normal text-[#9CA3AF]">
-                                        {siteLabel}
-                                    </span>
-                                ) : null}
-                            </span>
-                            <ExternalLink className="h-4 w-4 shrink-0 opacity-80" />
-                        </a>
-                    )}
-
-                    {body ? (
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB]">
-                            {body}
-                        </p>
-                    ) : (
-                        <p className="text-sm text-[#6B7280]">Detaylı açıklama henüz eklenmedi.</p>
-                    )}
-
                     {links.length > 0 && (
                         <div className="space-y-2">
                             <p className="text-xs font-medium uppercase tracking-wider text-[#6B7280]">
@@ -158,15 +111,23 @@ function DetailModal({
                                             href={l.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-[#E8EAED] transition hover:border-[#1A9B8E]/40 hover:text-white"
+                                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#1A9B8E]/35 bg-[#1A9B8E]/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-[#1A9B8E]/20"
                                         >
-                                            {l.label}
-                                            <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                                            <span className="truncate">{l.label}</span>
+                                            <ExternalLink className="h-4 w-4 shrink-0 opacity-80" />
                                         </a>
                                     </li>
                                 ))}
                             </ul>
                         </div>
+                    )}
+
+                    {body ? (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#D1D5DB]">
+                            {body}
+                        </p>
+                    ) : (
+                        <p className="text-sm text-[#6B7280]">Detaylı açıklama henüz eklenmedi.</p>
                     )}
                 </div>
             </div>
@@ -284,8 +245,6 @@ export function WorkShowcase({
                     logoUrl={projectActive.logo_url}
                     gallery={parseShowcaseGallery(projectActive.showcase_gallery)}
                     links={projectLinks}
-                    siteHref={siteUrl(projectActive)}
-                    siteLabel={siteHostLabel(projectActive)}
                     badge="Proje"
                     onClose={() => setProjectId(null)}
                 />

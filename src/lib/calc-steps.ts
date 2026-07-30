@@ -91,6 +91,34 @@ export function describeStep(step: CalcStep): string {
     }
 }
 
+/** Kısa özet notu: 1000 % 10 - 5 */
+export function formatCompactMathNote(base: number, steps: CalcStep[]): string {
+    const baseStr = Number.isFinite(base)
+        ? String(Math.round(base * 1000) / 1000)
+        : '0';
+    if (steps.length === 0) return baseStr;
+
+    const parts = steps.map((step) => {
+        const v = Number.isFinite(step.value) ? step.value : 0;
+        switch (step.op) {
+            case 'percent':
+                return `% ${v}`;
+            case 'add':
+                return `+ ${v}`;
+            case 'subtract':
+                return `- ${v}`;
+            case 'multiply':
+                return `× ${v}`;
+            case 'divide':
+                return `÷ ${v}`;
+            default:
+                return String(v);
+        }
+    });
+
+    return `${baseStr} ${parts.join(' ')}`;
+}
+
 /** sort_order sırasıyla çöz; kaynak yalnızca brüt veya önceki satır olabilir */
 export function resolveLineAmounts(
     lines: {

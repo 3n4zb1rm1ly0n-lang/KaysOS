@@ -8,6 +8,7 @@ import {
     CALC_OP_LABELS,
     CALC_OPS,
     describeStep,
+    formatCompactMathNote,
     parseCalcSteps,
     resolveLineAmounts,
     stepsFromPercentage,
@@ -815,6 +816,47 @@ export default function CompanyFinanceCalculatorPage() {
                         <dt className="text-muted-foreground">Brüt</dt>
                         <dd className="font-medium tabular-nums">{fmtMoney(gross)}</dd>
                     </div>
+
+                    {workingLines.length > 0 && (
+                        <div className="space-y-2 py-2 border-y border-border/60">
+                            {workingLines.map((wl) => {
+                                const line = lines.find((l) => l.id === wl.id);
+                                const name =
+                                    drafts[wl.id]?.name?.trim() || line?.name || 'Kalem';
+                                let base = gross;
+                                if (wl.source_type === 'line' && wl.source_line_id) {
+                                    base = amounts.get(wl.source_line_id) ?? 0;
+                                }
+                                const note = formatCompactMathNote(base, wl.steps);
+                                const amount = amounts.get(wl.id) ?? 0;
+                                const sign = wl.is_deduction ? '−' : '+';
+                                return (
+                                    <div
+                                        key={wl.id}
+                                        className="flex justify-between gap-4 items-start"
+                                    >
+                                        <dt className="min-w-0">
+                                            <span className="text-foreground">{name}</span>
+                                            <span className="block text-xs text-muted-foreground font-mono tabular-nums mt-0.5">
+                                                {note}
+                                            </span>
+                                        </dt>
+                                        <dd
+                                            className={`font-medium tabular-nums shrink-0 ${
+                                                wl.is_deduction
+                                                    ? 'text-red-400'
+                                                    : 'text-emerald-400'
+                                            }`}
+                                        >
+                                            {sign}
+                                            {fmtMoney(amount)}
+                                        </dd>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <div className="flex justify-between gap-4">
                         <dt className="text-muted-foreground">Toplam kesinti</dt>
                         <dd className="font-medium tabular-nums text-red-400">

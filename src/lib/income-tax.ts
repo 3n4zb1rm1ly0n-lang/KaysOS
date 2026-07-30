@@ -180,3 +180,156 @@ export const DEFAULT_2026_BRACKETS: TaxBracket[] = [
     { min_amount: 1_500_000, max_amount: 5_300_000, rate_percent: 35 },
     { min_amount: 5_300_000, max_amount: null, rate_percent: 40 }
 ];
+
+export const MONTH_NAMES_TR = [
+    'Ocak',
+    'Şubat',
+    'Mart',
+    'Nisan',
+    'Mayıs',
+    'Haziran',
+    'Temmuz',
+    'Ağustos',
+    'Eylül',
+    'Ekim',
+    'Kasım',
+    'Aralık'
+] as const;
+
+/** Geçici vergi dönem sonu ayları (0-index): Mart, Haziran, Eylül — 4. dönem yok */
+export const GECICI_VERGI_MONTH_INDEXES = [2, 5, 8] as const;
+
+const GECICI_REASONS: Record<number, string> = {
+    1: 'İlk üç aylık ticari kazanç hesaplanır. Devlet yıl sonunu beklemeden gelir vergisinin bir kısmını tahsil eder.',
+    2: 'Nisan–Haziran dönemi kazancı hesaplanır.',
+    3: 'Temmuz–Eylül dönemi kazancı hesaplanır.'
+};
+
+export type PaymentCalendarRow = {
+    id: string;
+    periodLabel: string;
+    /** İşlem: KDV / KDV + geçici / yıllık beyanname */
+    islem: string;
+    /** Neden hesaplanır? */
+    reason: string;
+    declarationLabel: string;
+    paymentLabel: string;
+    kdvDue: number;
+    incomeDue: number;
+    totalDue: number;
+    geciciNo: number | null;
+    isYearEnd: boolean;
+    installmentMarch?: number;
+    installmentJuly?: number;
+};
+
+function monthLabel(year: number, monthIndex: number): string {
+    const yOffset = Math.floor(monthIndex / 12);
+    const m = ((monthIndex % 12) + 12) % 12;
+    const label = MONTH_NAMES_TR[m];
+    const y = year + yOffset;
+    return y === year ? label : `${label} ${y}`;
+}
+
+function kdvReason(monthIndex: number): string {
+    const name = MONTH_NAMES_TR[monthIndex];
+    if (monthIndex === 0) {
+        return 'Ocak ayında müşterilerden tahsil edilen KDV ile giderlerde ödenen KDV arasındaki fark hesaplanır.';
+    }
+    if (monthIndex === 11) {
+        return 'Aralık ayı KDV hesaplanır. Yıl sonu kapanışına hazırlanılır.';
+    }
+    return `${name} ayı KDV hesaplanır.`;
+}
+
+/**
+ * Beyan / ödeme takvimi (3 geçici dönem + Mart yıllık beyanname).
+ * Geçici: çeyrek sonu kümülatif GV − tevfikat − önceki geçici.
+ * Yıllık: yıllık GV − geçici − tevfikat; Mart & Temmuz 2 taksit.
+ */
+export function buildPaymentCalendar(
+    year: number,
+    monthlyKdvDue: number[],
+    schedule: ReturnType<typeof cumulativeMonthlyTaxSchedule>
+): PaymentCalendarRow[] {
+    const kdv = Array.from({ length: 12 }, (_, i) =>
+        Math.max(0, Number.isFinite(monthlyKdvDue[i]) ? monthlyKdvDue[i] : 0)
+    );
+
+    const geciciEnds = GECICI_VERGI_MONTH_INDEXES as readonly number[];
+    const geciciAmounts: number[] = [];
+    let prevGeciciSum = 0;
+    for (let q = 0; q < geciciEnds.length; q++) {
+        const endIdx = geciciEnds[q];
+        const cumGv = schedule.months[endIdx]?.cumulativeGv ?? 0;
+        const cumTev = schedule.months[endIdx]?.cumulativeTevfikat ?? 0;
+        const due = Math.max(0, cumGv - cumTev - prevGeciciSum);
+        geciciAmounts.push(due);
+        prevGeciciSum += due;
+    }
+
+    const totalGecici = geciciAmounts.reduce((a, b) => a + b, 0);
+    const yearEndResidual = Math.max(
+        0,
+        schedule.cumulativeGv - totalGecici - schedule.cumulativeTevfikat
+    );
+    const installment = yearEndResidual / 2;
+
+    const rows: PaymentCalendarRow[] = [];
+
+    for (let m = 0; m < 12; m++) {
+        const geciciSlot = geciciEnds.indexOf(m);
+        const isGecici = geciciSlot >= 0;
+        const geciciNo = isGecici ? geciciSlot + 1 : null;
+        const incomeDue = isGecici ? geciciAmounts[geciciSlot] : 0;
+        const kdvDue = kdv[m];
+
+        // Beyan: sonraki ay. Ödeme: KDV-only → sonraki ay; geçici dönem → bir ay daha kayar.
+        const declarationMonth = m + 1;
+        const paymentMonth = isGecici ? m + 2 : m + 1;
+
+        rows.push({
+            id: `m-${m}`,
+            periodLabel: MONTH_NAMES_TR[m],
+            islem: isGecici ? `KDV + ${geciciNo}. Geçici Vergi` : 'KDV',
+            reason: isGecici
+                ? GECICI_REASONS[geciciNo!]
+                : kdvReason(m),
+            declarationLabel: monthLabel(year, declarationMonth),
+            paymentLabel: monthLabel(year, paymentMonth),
+            kdvDue,
+            incomeDue,
+            totalDue: kdvDue + incomeDue,
+            geciciNo,
+            isYearEnd: false
+        });
+    }
+
+    rows.push({
+        id: 'year-end',
+        periodLabel: `Mart ${year + 1}`,
+        islem: 'Yıllık Gelir Vergisi Beyannamesi',
+        reason:
+            'Tüm yılın net kazancı hesaplanır. Önceden ödenen geçici vergiler mahsup edilir, kalan tutar varsa ödenir veya fazla ödeme varsa mahsup edilir.',
+        declarationLabel: monthLabel(year, 12 + 2),
+        paymentLabel: `${monthLabel(year, 12 + 2)} ve ${monthLabel(year, 12 + 6)} (2 taksit)`,
+        kdvDue: 0,
+        incomeDue: yearEndResidual,
+        totalDue: yearEndResidual,
+        geciciNo: null,
+        isYearEnd: true,
+        installmentMarch: installment,
+        installmentJuly: installment
+    });
+
+    return rows;
+}
+
+/** Yıl sonu 2 taksit tutarı (eşit). */
+export function yearEndInstallments(yearEndResidual: number): {
+    march: number;
+    july: number;
+} {
+    const half = Math.max(0, yearEndResidual) / 2;
+    return { march: half, july: half };
+}

@@ -15,6 +15,7 @@ import {
     DEFAULT_2026_BRACKETS,
     SALES_VAT_RATE,
     TEVFIKAT_OF_VAT_PERCENT,
+    buildPaymentCalendar,
     cumulativeMonthlyTaxSchedule,
     expenseBreakdown,
     monthlyTaxableBase,
@@ -124,6 +125,7 @@ export default function MonthlyRevenuePage() {
     const [savingMonth, setSavingMonth] = useState<number | null>(null);
     const [savingSettings, setSavingSettings] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [calendarOpen, setCalendarOpen] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
 
@@ -321,6 +323,14 @@ export default function MonthlyRevenuePage() {
             tevfikat: schedule.cumulativeTevfikat
         };
     }, [resolved, schedule.cumulativeTevfikat]);
+
+    const paymentCalendar = useMemo(() => {
+        // Hesaplanan KDV yükümlülüğü: satış KDV − indirilecek (ödenen mahsup edilmeden önce)
+        const monthlyKdvDue = resolved.map((r) =>
+            Math.max(0, r.salesVat - r.totalDeductible)
+        );
+        return buildPaymentCalendar(year, monthlyKdvDue, schedule);
+    }, [resolved, schedule, year]);
 
     const updateMonth = (idx: number, patch: Partial<MonthDraft>) => {
         setMonths((prev) =>
@@ -696,6 +706,97 @@ export default function MonthlyRevenuePage() {
                         </dd>
                     </div>
                 </dl>
+            </div>
+
+            <div className="rounded-xl border border-border overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setCalendarOpen((o) => !o)}
+                    className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-secondary/30"
+                >
+                    {calendarOpen ? (
+                        <ChevronDown className="w-4 h-4" />
+                    ) : (
+                        <ChevronRight className="w-4 h-4" />
+                    )}
+                    Beyan / ödeme takvimi ({year})
+                </button>
+                {calendarOpen && (
+                    <div className="border-t border-border overflow-x-auto">
+                        <table className="w-full text-sm min-w-[720px]">
+                            <thead>
+                                <tr className="text-left text-xs text-muted-foreground border-b border-border bg-secondary/20">
+                                    <th className="px-3 py-2 font-medium">Dönem</th>
+                                    <th className="px-3 py-2 font-medium">İşlem</th>
+                                    <th className="px-3 py-2 font-medium">Neden hesaplanır?</th>
+                                    <th className="px-3 py-2 font-medium text-right">Tutar</th>
+                                    <th className="px-3 py-2 font-medium">Beyan</th>
+                                    <th className="px-3 py-2 font-medium">Ödeme</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {paymentCalendar.map((row) => (
+                                    <tr
+                                        key={row.id}
+                                        className={
+                                            row.isYearEnd || row.geciciNo
+                                                ? 'bg-secondary/15'
+                                                : undefined
+                                        }
+                                    >
+                                        <td className="px-3 py-2.5 font-medium whitespace-nowrap align-top">
+                                            {row.periodLabel}
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                                            {row.islem}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-muted-foreground text-xs max-w-[18rem] align-top">
+                                            {row.reason}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap align-top">
+                                            <div>{fmtMoney(row.totalDue)}</div>
+                                            {(row.kdvDue > 0 || row.incomeDue > 0) &&
+                                                !row.isYearEnd && (
+                                                    <div className="text-[10px] text-muted-foreground">
+                                                        {row.kdvDue > 0 && (
+                                                            <span>KDV {fmtMoney(row.kdvDue)}</span>
+                                                        )}
+                                                        {row.kdvDue > 0 && row.incomeDue > 0 && (
+                                                            <span> · </span>
+                                                        )}
+                                                        {row.incomeDue > 0 && (
+                                                            <span>
+                                                                Gelir {fmtMoney(row.incomeDue)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            {row.isYearEnd &&
+                                                row.installmentMarch != null &&
+                                                row.installmentMarch > 0 && (
+                                                    <div className="text-[10px] text-muted-foreground">
+                                                        Taksit {fmtMoney(row.installmentMarch)} × 2
+                                                    </div>
+                                                )}
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                                            {row.declarationLabel}
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                                            {row.paymentLabel}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
+                            Geçici vergi dönemleri: Mart, Haziran, Eylül (3 dönem). Aralık yalnızca
+                            KDV. Yıllık beyanname sonraki yıl Mart; kalan GV Mart &amp; Temmuz iki
+                            taksit. KDV = satış − indirilecek; geçici = kümülatif GV − tevfikat −
+                            önceki geçici.
+                        </p>
+                    </div>
+                )}
             </div>
 
             <div className="rounded-xl border border-border overflow-hidden">

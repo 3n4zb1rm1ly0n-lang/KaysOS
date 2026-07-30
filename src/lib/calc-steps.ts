@@ -1,11 +1,23 @@
 export type CalcOp = 'percent' | 'add' | 'subtract' | 'multiply' | 'divide';
 
+export type OperandKind = 'number' | 'gross' | 'line';
+
 export type CalcStep = {
     op: CalcOp;
     value: number;
+    operand_kind: OperandKind;
+    operand_line_id: string | null;
 };
 
 export type CalcSourceType = 'gross' | 'line';
+
+/** Net / özet üzerinde kalemin etkisi */
+export type ResultEffect = 'deduction' | 'addition' | 'exclude';
+
+export type StepResolveCtx = {
+    gross: number;
+    amounts: Map<string, number>;
+};
 
 export const CALC_OP_LABELS: Record<CalcOp, string> = {
     percent: 'Yüzde',
@@ -17,6 +29,21 @@ export const CALC_OP_LABELS: Record<CalcOp, string> = {
 
 export const CALC_OPS: CalcOp[] = ['percent', 'add', 'subtract', 'multiply', 'divide'];
 
+export const RESULT_EFFECT_LABELS: Record<ResultEffect, string> = {
+    deduction: 'Kesinti (netten düş)',
+    addition: 'Ek (nete ekle)',
+    exclude: 'Sonuca dahil etme'
+};
+
+export function parseResultEffect(
+    raw: unknown,
+    isDeductionFallback?: boolean
+): ResultEffect {
+    if (raw === 'deduction' || raw === 'addition' || raw === 'exclude') return raw;
+    if (isDeductionFallback === false) return 'addition';
+    return 'deduction';
+}
+
 export function parseCalcSteps(raw: unknown): CalcStep[] {
     if (!Array.isArray(raw)) return [];
     const out: CalcStep[] = [];
@@ -24,6 +51,12 @@ export function parseCalcSteps(raw: unknown): CalcStep[] {
         if (!item || typeof item !== 'object') continue;
         const op = (item as { op?: unknown }).op;
         const value = Number((item as { value?: unknown }).value);
+        const kindRaw = (item as { operand_kind?: unknown }).operand_kind;
+        const operand_kind: OperandKind =
+            kindRaw === 'gross' || kindRaw === 'line' || kindRaw === 'number'
+                ? kindRaw
+                : 'number';
+        const lineRaw = (item as { operand_line_id?: unknown }).operand_line_id;
         if (
             op === 'percent' ||
             op === 'add' ||
@@ -33,23 +66,37 @@ export function parseCalcSteps(raw: unknown): CalcStep[] {
         ) {
             out.push({
                 op,
-                value: Number.isFinite(value) ? value : 0
+                value: Number.isFinite(value) ? value : 0,
+                operand_kind,
+                operand_line_id:
+                    operand_kind === 'line' && lineRaw ? String(lineRaw) : null
             });
         }
     }
     return out;
 }
 
-/** Eski percentage kolonundan tek adımlık zincir */
 export function stepsFromPercentage(percentage: number): CalcStep[] {
     const p = Number.isFinite(percentage) ? percentage : 0;
-    return [{ op: 'percent', value: p }];
+    return [{ op: 'percent', value: p, operand_kind: 'number', operand_line_id: null }];
 }
 
-export function applySteps(base: number, steps: CalcStep[]): number {
+export function resolveStepOperand(step: CalcStep, ctx: StepResolveCtx): number {
+    if (step.operand_kind === 'gross') return ctx.gross;
+    if (step.operand_kind === 'line' && step.operand_line_id) {
+        return ctx.amounts.get(step.operand_line_id) ?? 0;
+    }
+    return Number.isFinite(step.value) ? step.value : 0;
+}
+
+export function applySteps(
+    base: number,
+    steps: CalcStep[],
+    ctx: StepResolveCtx = { gross: 0, amounts: new Map() }
+): number {
     let acc = Number.isFinite(base) ? base : 0;
     for (const step of steps) {
-        const v = Number.isFinite(step.value) ? step.value : 0;
+        const v = resolveStepOperand(step, ctx);
         switch (step.op) {
             case 'percent':
                 acc = (acc * v) / 100;
@@ -73,53 +120,58 @@ export function applySteps(base: number, steps: CalcStep[]): number {
     return acc;
 }
 
-export function describeStep(step: CalcStep): string {
-    const v = Number.isFinite(step.value) ? step.value : 0;
+function compactNum(n: number): string {
+    return String(Math.round(n * 1000) / 1000);
+}
+
+export function describeStep(step: CalcStep, ctx?: StepResolveCtx): string {
+    const v = ctx ? resolveStepOperand(step, ctx) : step.value;
     switch (step.op) {
         case 'percent':
-            return `%${v}`;
+            return `%${compactNum(v)}`;
         case 'add':
-            return `+${v}`;
+            return `+${compactNum(v)}`;
         case 'subtract':
-            return `−${v}`;
+            return `−${compactNum(v)}`;
         case 'multiply':
-            return `×${v}`;
+            return `×${compactNum(v)}`;
         case 'divide':
-            return `÷${v}`;
+            return `÷${compactNum(v)}`;
         default:
-            return String(v);
+            return compactNum(v);
     }
 }
 
-/** Kısa özet notu: 1000 % 10 - 5 */
-export function formatCompactMathNote(base: number, steps: CalcStep[]): string {
-    const baseStr = Number.isFinite(base)
-        ? String(Math.round(base * 1000) / 1000)
-        : '0';
+/** Kısa özet notu: 1000 % 10 - 5 (operand kaynakları çözülmüş sayı) */
+export function formatCompactMathNote(
+    base: number,
+    steps: CalcStep[],
+    ctx: StepResolveCtx = { gross: 0, amounts: new Map() }
+): string {
+    const baseStr = Number.isFinite(base) ? compactNum(base) : '0';
     if (steps.length === 0) return baseStr;
 
     const parts = steps.map((step) => {
-        const v = Number.isFinite(step.value) ? step.value : 0;
+        const v = resolveStepOperand(step, ctx);
         switch (step.op) {
             case 'percent':
-                return `% ${v}`;
+                return `% ${compactNum(v)}`;
             case 'add':
-                return `+ ${v}`;
+                return `+ ${compactNum(v)}`;
             case 'subtract':
-                return `- ${v}`;
+                return `- ${compactNum(v)}`;
             case 'multiply':
-                return `× ${v}`;
+                return `× ${compactNum(v)}`;
             case 'divide':
-                return `÷ ${v}`;
+                return `÷ ${compactNum(v)}`;
             default:
-                return String(v);
+                return compactNum(v);
         }
     });
 
     return `${baseStr} ${parts.join(' ')}`;
 }
 
-/** sort_order sırasıyla çöz; kaynak yalnızca brüt veya önceki satır olabilir */
 export function resolveLineAmounts(
     lines: {
         id: string;
@@ -127,21 +179,20 @@ export function resolveLineAmounts(
         source_type: CalcSourceType;
         source_line_id: string | null;
         steps: CalcStep[];
-        is_deduction: boolean;
+        result_effect: ResultEffect;
     }[],
     gross: number
 ): Map<string, number> {
     const sorted = [...lines].sort((a, b) => a.sort_order - b.sort_order);
     const amounts = new Map<string, number>();
+    const ctx: StepResolveCtx = { gross, amounts };
 
     for (const line of sorted) {
         let base = gross;
         if (line.source_type === 'line' && line.source_line_id) {
-            base = amounts.has(line.source_line_id)
-                ? (amounts.get(line.source_line_id) as number)
-                : 0;
+            base = amounts.get(line.source_line_id) ?? 0;
         }
-        amounts.set(line.id, applySteps(base, line.steps));
+        amounts.set(line.id, applySteps(base, line.steps, ctx));
     }
 
     return amounts;

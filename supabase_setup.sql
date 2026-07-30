@@ -114,14 +114,15 @@ create table if not exists company_finance_calc_lines (
   is_deduction boolean not null default true,
   source_type text not null default 'gross',
   source_line_id uuid references company_finance_calc_lines(id) on delete set null,
-  steps jsonb not null default '[]'::jsonb
+  steps jsonb not null default '[]'::jsonb,
+  result_effect text not null default 'deduction'
 );
 
-insert into company_finance_calc_lines (name, percentage, sort_order, is_deduction, source_type, steps)
+insert into company_finance_calc_lines (name, percentage, sort_order, is_deduction, source_type, steps, result_effect)
 select * from (values
-  ('Gelir vergisi', 15::numeric, 0, true, 'gross', '[{"op":"percent","value":15}]'::jsonb),
-  ('SGK / kesinti', 20::numeric, 1, true, 'gross', '[{"op":"percent","value":20}]'::jsonb)
-) as seed(name, percentage, sort_order, is_deduction, source_type, steps)
+  ('Gelir vergisi', 15::numeric, 0, true, 'gross', '[{"op":"percent","value":15,"operand_kind":"number"}]'::jsonb, 'deduction'),
+  ('SGK / kesinti', 20::numeric, 1, true, 'gross', '[{"op":"percent","value":20,"operand_kind":"number"}]'::jsonb, 'deduction')
+) as seed(name, percentage, sort_order, is_deduction, source_type, steps, result_effect)
 where not exists (select 1 from company_finance_calc_lines limit 1);
 
 -- -----------------------------------------------------------------------------

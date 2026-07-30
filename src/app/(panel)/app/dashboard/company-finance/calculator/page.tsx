@@ -10,11 +10,16 @@ import {
     describeStep,
     formatCompactMathNote,
     parseCalcSteps,
+    parseResultEffect,
     resolveLineAmounts,
+    RESULT_EFFECT_LABELS,
     stepsFromPercentage,
     type CalcOp,
     type CalcSourceType,
-    type CalcStep
+    type CalcStep,
+    type OperandKind,
+    type ResultEffect,
+    type StepResolveCtx
 } from '@/lib/calc-steps';
 
 interface CalcLine {
@@ -23,6 +28,7 @@ interface CalcLine {
     percentage: number;
     sort_order: number;
     is_deduction: boolean;
+    result_effect: ResultEffect;
     source_type: CalcSourceType;
     source_line_id: string | null;
     steps: CalcStep[];
@@ -30,25 +36,38 @@ interface CalcLine {
 
 type DraftStep = {
     op: CalcOp;
+    operand_kind: OperandKind;
     value: string;
+    operand_line_id: string | null;
 };
 
 type DraftLine = {
     name: string;
     source_type: CalcSourceType;
     source_line_id: string | null;
+    result_effect: ResultEffect;
     steps: DraftStep[];
 };
 
 function toCalcSteps(steps: DraftStep[]): CalcStep[] {
     return steps.map((s) => {
         const n = parseFloat(s.value.replace(',', '.'));
-        return { op: s.op, value: Number.isFinite(n) ? n : 0 };
+        return {
+            op: s.op,
+            value: Number.isFinite(n) ? n : 0,
+            operand_kind: s.operand_kind,
+            operand_line_id: s.operand_kind === 'line' ? s.operand_line_id : null
+        };
     });
 }
 
 function toDraftSteps(steps: CalcStep[]): DraftStep[] {
-    return steps.map((s) => ({ op: s.op, value: fmtNum(s.value) }));
+    return steps.map((s) => ({
+        op: s.op,
+        operand_kind: s.operand_kind || 'number',
+        value: fmtNum(s.value),
+        operand_line_id: s.operand_line_id
+    }));
 }
 
 function fmtMoney(n: number): string {
@@ -61,7 +80,7 @@ function fmtNum(n: number): string {
 }
 
 function firstPercentValue(steps: CalcStep[]): number {
-    const p = steps.find((s) => s.op === 'percent');
+    const p = steps.find((s) => s.op === 'percent' && s.operand_kind === 'number');
     return p ? p.value : 0;
 }
 
@@ -71,8 +90,19 @@ function isMissingStepsColumnError(err: { message?: string; code?: string } | nu
         msg.includes('steps') ||
         msg.includes('source_type') ||
         msg.includes('source_line_id') ||
+        msg.includes('result_effect') ||
         err?.code === '42703'
     );
+}
+
+function emptyDraft(): DraftLine {
+    return {
+        name: '',
+        source_type: 'gross',
+        source_line_id: null,
+        result_effect: 'exclude',
+        steps: []
+    };
 }
 
 export default function CompanyFinanceCalculatorPage() {
@@ -86,9 +116,12 @@ export default function CompanyFinanceCalculatorPage() {
     const [newName, setNewName] = useState('');
     const [newOp, setNewOp] = useState<CalcOp>('percent');
     const [newValue, setNewValue] = useState('20');
+    const [newEffect, setNewEffect] = useState<ResultEffect>('exclude');
     const [drafts, setDrafts] = useState<Record<string, DraftLine>>({});
     const [addStepOp, setAddStepOp] = useState<Record<string, CalcOp>>({});
     const [addStepValue, setAddStepValue] = useState<Record<string, string>>({});
+    const [addStepKind, setAddStepKind] = useState<Record<string, OperandKind>>({});
+    const [addStepLineId, setAddStepLineId] = useState<Record<string, string>>({});
     const [showMathPicker, setShowMathPicker] = useState<Record<string, boolean>>({});
 
     const gross = useMemo(() => {
@@ -103,6 +136,7 @@ export default function CompanyFinanceCalculatorPage() {
                 name: r.name,
                 source_type: r.source_type,
                 source_line_id: r.source_line_id,
+                result_effect: r.result_effect,
                 steps: toDraftSteps(r.steps)
             };
         });
@@ -116,12 +150,14 @@ export default function CompanyFinanceCalculatorPage() {
             steps = stepsFromPercentage(percentage);
         }
         const sourceType = r.source_type === 'line' ? 'line' : 'gross';
+        const is_deduction = r.is_deduction !== false;
         return {
             id: String(r.id),
             name: String(r.name || ''),
             percentage,
             sort_order: Number(r.sort_order) || 0,
-            is_deduction: r.is_deduction !== false,
+            is_deduction,
+            result_effect: parseResultEffect(r.result_effect, is_deduction),
             source_type: sourceType,
             source_line_id: r.source_line_id ? String(r.source_line_id) : null,
             steps
@@ -160,7 +196,8 @@ export default function CompanyFinanceCalculatorPage() {
                         ...r,
                         source_type: 'gross',
                         source_line_id: null,
-                        steps: stepsFromPercentage(Number(r.percentage) || 0)
+                        steps: stepsFromPercentage(Number(r.percentage) || 0),
+                        result_effect: r.is_deduction === false ? 'addition' : 'deduction'
                     })
                 );
                 setLines(rows);
@@ -195,7 +232,7 @@ export default function CompanyFinanceCalculatorPage() {
             return {
                 id: line.id,
                 sort_order: line.sort_order,
-                is_deduction: line.is_deduction,
+                result_effect: d?.result_effect ?? line.result_effect,
                 source_type: d?.source_type ?? line.source_type,
                 source_line_id: d?.source_line_id ?? line.source_line_id,
                 steps: d ? toCalcSteps(d.steps) : line.steps
@@ -208,10 +245,15 @@ export default function CompanyFinanceCalculatorPage() {
         [workingLines, gross]
     );
 
+    const stepCtx: StepResolveCtx = useMemo(
+        () => ({ gross, amounts }),
+        [gross, amounts]
+    );
+
     const totalDeductions = useMemo(
         () =>
             workingLines
-                .filter((l) => l.is_deduction)
+                .filter((l) => l.result_effect === 'deduction')
                 .reduce((acc, l) => acc + (amounts.get(l.id) ?? 0), 0),
         [workingLines, amounts]
     );
@@ -219,7 +261,7 @@ export default function CompanyFinanceCalculatorPage() {
     const totalAdditions = useMemo(
         () =>
             workingLines
-                .filter((l) => !l.is_deduction)
+                .filter((l) => l.result_effect === 'addition')
                 .reduce((acc, l) => acc + (amounts.get(l.id) ?? 0), 0),
         [workingLines, amounts]
     );
@@ -229,7 +271,7 @@ export default function CompanyFinanceCalculatorPage() {
     const updateDraft = (id: string, patch: Partial<DraftLine>) => {
         setDrafts((d) => ({
             ...d,
-            [id]: { ...(d[id] || { name: '', source_type: 'gross', source_line_id: null, steps: [] }), ...patch }
+            [id]: { ...(d[id] || emptyDraft()), ...patch }
         }));
     };
 
@@ -246,16 +288,42 @@ export default function CompanyFinanceCalculatorPage() {
 
     const appendStep = (lineId: string) => {
         const op = addStepOp[lineId] ?? 'percent';
-        const raw = addStepValue[lineId] ?? (op === 'percent' ? '20' : '0');
-        const value = parseFloat(raw.replace(',', '.'));
-        if (!Number.isFinite(value)) {
-            alert('Geçerli bir sayı girin.');
-            return;
+        const kind = addStepKind[lineId] ?? 'number';
+        const prev = previousLinesFor(lineId);
+        let operand_line_id: string | null = null;
+        let value = '0';
+
+        if (kind === 'line') {
+            operand_line_id = addStepLineId[lineId] || prev[0]?.id || null;
+            if (!operand_line_id) {
+                alert('Operand için bir kalem seçin.');
+                return;
+            }
+        } else if (kind === 'number') {
+            const raw = addStepValue[lineId] ?? (op === 'percent' ? '20' : '0');
+            const n = parseFloat(raw.replace(',', '.'));
+            if (!Number.isFinite(n)) {
+                alert('Geçerli bir sayı girin.');
+                return;
+            }
+            value = raw.trim() || String(n);
         }
+
         const current = drafts[lineId]?.steps ?? [];
-        updateDraft(lineId, { steps: [...current, { op, value: raw.trim() || String(value) }] });
+        updateDraft(lineId, {
+            steps: [
+                ...current,
+                {
+                    op,
+                    operand_kind: kind,
+                    value,
+                    operand_line_id
+                }
+            ]
+        });
         setShowMathPicker((s) => ({ ...s, [lineId]: false }));
         setAddStepValue((s) => ({ ...s, [lineId]: op === 'percent' ? '20' : '0' }));
+        setAddStepKind((s) => ({ ...s, [lineId]: 'number' }));
     };
 
     const saveLine = async (id: string) => {
@@ -274,12 +342,21 @@ export default function CompanyFinanceCalculatorPage() {
             alert('Kaynak satır seçin.');
             return;
         }
+        for (const s of draft.steps) {
+            if (s.operand_kind === 'line' && !s.operand_line_id) {
+                alert('Adımlarda kaynak kalem seçili olmalı.');
+                return;
+            }
+        }
 
         const steps = toCalcSteps(draft.steps);
         const percentage = firstPercentValue(steps);
+        const is_deduction = draft.result_effect !== 'addition';
         const body = {
             name,
             percentage,
+            is_deduction,
+            result_effect: draft.result_effect,
             source_type: draft.source_type,
             source_line_id: draft.source_type === 'line' ? draft.source_line_id : null,
             steps
@@ -295,7 +372,7 @@ export default function CompanyFinanceCalculatorPage() {
             setSchemaHint(true);
             ({ error: err } = await supabase
                 .from('company_finance_calc_lines')
-                .update({ name, percentage })
+                .update({ name, percentage, is_deduction })
                 .eq('id', id));
         }
 
@@ -312,6 +389,8 @@ export default function CompanyFinanceCalculatorPage() {
                           ...l,
                           name,
                           percentage,
+                          is_deduction,
+                          result_effect: draft.result_effect,
                           source_type: draft.source_type,
                           source_line_id:
                               draft.source_type === 'line' ? draft.source_line_id : null,
@@ -334,11 +413,21 @@ export default function CompanyFinanceCalculatorPage() {
             return;
         }
         setLines((prev) =>
-            prev.map((l) =>
-                l.source_line_id === id
-                    ? { ...l, source_type: 'gross' as const, source_line_id: null }
-                    : l
-            ).filter((l) => l.id !== id)
+            prev
+                .map((l) =>
+                    l.source_line_id === id
+                        ? { ...l, source_type: 'gross' as const, source_line_id: null }
+                        : l
+                )
+                .filter((l) => l.id !== id)
+                .map((l) => ({
+                    ...l,
+                    steps: l.steps.map((s) =>
+                        s.operand_line_id === id
+                            ? { ...s, operand_kind: 'number' as const, operand_line_id: null, value: 0 }
+                            : s
+                    )
+                }))
         );
         setDrafts((d) => {
             const next = { ...d };
@@ -347,6 +436,14 @@ export default function CompanyFinanceCalculatorPage() {
                 if (next[key].source_line_id === id) {
                     next[key] = { ...next[key], source_type: 'gross', source_line_id: null };
                 }
+                next[key] = {
+                    ...next[key],
+                    steps: next[key].steps.map((s) =>
+                        s.operand_line_id === id
+                            ? { ...s, operand_kind: 'number', operand_line_id: null, value: '0' }
+                            : s
+                    )
+                };
             }
             return next;
         });
@@ -362,17 +459,21 @@ export default function CompanyFinanceCalculatorPage() {
             return;
         }
 
-        const steps: CalcStep[] = [{ op: newOp, value }];
+        const steps: CalcStep[] = [
+            { op: newOp, value, operand_kind: 'number', operand_line_id: null }
+        ];
         const percentage = firstPercentValue(steps);
         const sort_order =
             lines.length === 0 ? 0 : Math.max(...lines.map((l) => l.sort_order)) + 1;
+        const is_deduction = newEffect !== 'addition';
 
         setAdding(true);
         const fullBody = {
             name,
             percentage,
             sort_order,
-            is_deduction: true,
+            is_deduction,
+            result_effect: newEffect,
             source_type: 'gross' as const,
             source_line_id: null,
             steps
@@ -388,7 +489,7 @@ export default function CompanyFinanceCalculatorPage() {
             setSchemaHint(true);
             ({ data, error: err } = await supabase
                 .from('company_finance_calc_lines')
-                .insert([{ name, percentage, sort_order, is_deduction: true }])
+                .insert([{ name, percentage, sort_order, is_deduction }])
                 .select()
                 .single());
         }
@@ -401,6 +502,9 @@ export default function CompanyFinanceCalculatorPage() {
 
         const row = mapRow(data as Record<string, unknown>);
         if (row.steps.length === 0) row.steps = steps;
+        if (!('result_effect' in (data as object)) || !(data as { result_effect?: string }).result_effect) {
+            row.result_effect = newEffect;
+        }
         setLines((prev) => [...prev, row]);
         setDrafts((d) => ({
             ...d,
@@ -408,12 +512,14 @@ export default function CompanyFinanceCalculatorPage() {
                 name: row.name,
                 source_type: row.source_type,
                 source_line_id: row.source_line_id,
+                result_effect: row.result_effect,
                 steps: toDraftSteps(row.steps)
             }
         }));
         setNewName('');
         setNewOp('percent');
         setNewValue('20');
+        setNewEffect('exclude');
     };
 
     const previousLinesFor = (lineId: string) => {
@@ -436,26 +542,94 @@ export default function CompanyFinanceCalculatorPage() {
         }
         const parts = [
             `${sourceLabel(draft)} ${fmtMoney(base)}`,
-            ...steps.map(describeStep)
+            ...steps.map((s) => describeStep(s, stepCtx))
         ];
-        return { parts: parts.join(' → '), result: applySteps(base, steps) };
+        return { parts: parts.join(' → '), result: applySteps(base, steps, stepCtx) };
     };
+
+    const operandSelectValue = (step: DraftStep) => {
+        if (step.operand_kind === 'gross') return 'gross';
+        if (step.operand_kind === 'line' && step.operand_line_id) {
+            return `line:${step.operand_line_id}`;
+        }
+        return 'number';
+    };
+
+    const renderOperandFields = (
+        lineId: string,
+        step: DraftStep,
+        idx: number,
+        prev: CalcLine[]
+    ) => (
+        <>
+            <select
+                value={operandSelectValue(step)}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'number') {
+                        updateStep(lineId, idx, {
+                            operand_kind: 'number',
+                            operand_line_id: null
+                        });
+                    } else if (v === 'gross') {
+                        updateStep(lineId, idx, {
+                            operand_kind: 'gross',
+                            operand_line_id: null
+                        });
+                    } else {
+                        updateStep(lineId, idx, {
+                            operand_kind: 'line',
+                            operand_line_id: v.replace(/^line:/, '')
+                        });
+                    }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 sm:w-36"
+                title="Operand kaynağı"
+            >
+                <option value="number">Sayı</option>
+                <option value="gross">Brüt maaş</option>
+                {prev.map((p) => (
+                    <option key={p.id} value={`line:${p.id}`}>
+                        {drafts[p.id]?.name?.trim() || p.name || 'Kalem'}
+                    </option>
+                ))}
+            </select>
+            {step.operand_kind === 'number' && (
+                <div className="relative w-full sm:w-28">
+                    <input
+                        type="text"
+                        inputMode="decimal"
+                        value={step.value}
+                        onChange={(e) =>
+                            updateStep(lineId, idx, { value: e.target.value })
+                        }
+                        className="w-full rounded-md border border-border bg-background px-2 py-1.5 pr-7 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {step.op === 'percent' && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                            %
+                        </span>
+                    )}
+                </div>
+            )}
+        </>
+    );
 
     return (
         <div className="space-y-8 max-w-3xl">
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Hesaplama</h2>
                 <p className="text-muted-foreground mt-1">
-                    Her kalem kendi kaynak ve matematik zinciriyle hesaplanır. Burada yalnızca deneme /
-                    formül kurulumu yapılır.
+                    Kalemleri hesaplayın; yalnızca “sonuç etkisi” seçilenler neti değiştirir.
                 </p>
             </div>
 
             {schemaHint && (
                 <p className="text-sm rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">
-                    Zincir kolonları henüz yok. Supabase SQL Editor’da{' '}
-                    <code className="text-xs">add_calc_line_steps.sql</code> dosyasını çalıştırın;
-                    şimdilik yüzde uyumluluk modu kullanılıyor.
+                    Şema eksik olabilir. Supabase SQL Editor’da{' '}
+                    <code className="text-xs">add_calc_line_steps.sql</code> ve{' '}
+                    <code className="text-xs">add_calc_result_effect.sql</code> dosyalarını
+                    çalıştırın.
                 </p>
             )}
 
@@ -505,6 +679,7 @@ export default function CompanyFinanceCalculatorPage() {
                             name: line.name,
                             source_type: line.source_type,
                             source_line_id: line.source_line_id,
+                            result_effect: line.result_effect,
                             steps: toDraftSteps(line.steps)
                         };
                         const prev = previousLinesFor(line.id);
@@ -527,7 +702,7 @@ export default function CompanyFinanceCalculatorPage() {
                                             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                         />
                                     </div>
-                                    <div className="w-full sm:w-48">
+                                    <div className="w-full sm:w-44">
                                         <label className="block text-xs text-muted-foreground mb-1">
                                             Kaynak
                                         </label>
@@ -556,9 +731,33 @@ export default function CompanyFinanceCalculatorPage() {
                                             <option value="gross">Brüt maaş</option>
                                             {prev.map((p) => (
                                                 <option key={p.id} value={`line:${p.id}`}>
-                                                    {p.name || 'İsimsiz kalem'}
+                                                    {drafts[p.id]?.name?.trim() ||
+                                                        p.name ||
+                                                        'İsimsiz kalem'}
                                                 </option>
                                             ))}
+                                        </select>
+                                    </div>
+                                    <div className="w-full sm:w-48">
+                                        <label className="block text-xs text-muted-foreground mb-1">
+                                            Sonuç etkisi
+                                        </label>
+                                        <select
+                                            value={draft.result_effect}
+                                            onChange={(e) =>
+                                                updateDraft(line.id, {
+                                                    result_effect: e.target.value as ResultEffect
+                                                })
+                                            }
+                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                        >
+                                            {(Object.keys(RESULT_EFFECT_LABELS) as ResultEffect[]).map(
+                                                (ef) => (
+                                                    <option key={ef} value={ef}>
+                                                        {RESULT_EFFECT_LABELS[ef]}
+                                                    </option>
+                                                )
+                                            )}
                                         </select>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0 pb-0.5">
@@ -619,24 +818,12 @@ export default function CompanyFinanceCalculatorPage() {
                                                             </option>
                                                         ))}
                                                     </select>
-                                                    <div className="relative w-full sm:w-28">
-                                                        <input
-                                                            type="text"
-                                                            inputMode="decimal"
-                                                            value={step.value}
-                                                            onChange={(e) =>
-                                                                updateStep(line.id, idx, {
-                                                                    value: e.target.value
-                                                                })
-                                                            }
-                                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 pr-7 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                                                        />
-                                                        {step.op === 'percent' && (
-                                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                                                                %
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    {renderOperandFields(
+                                                        line.id,
+                                                        step,
+                                                        idx,
+                                                        prev
+                                                    )}
                                                     <button
                                                         type="button"
                                                         onClick={() => removeStep(line.id, idx)}
@@ -652,7 +839,7 @@ export default function CompanyFinanceCalculatorPage() {
 
                                     {pickerOpen ? (
                                         <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border border-dashed border-border p-3">
-                                            <div className="w-full sm:w-36">
+                                            <div className="w-full sm:w-32">
                                                 <label className="block text-xs text-muted-foreground mb-1">
                                                     İşlem
                                                 </label>
@@ -673,29 +860,72 @@ export default function CompanyFinanceCalculatorPage() {
                                                     ))}
                                                 </select>
                                             </div>
-                                            <div className="w-full sm:w-28">
+                                            <div className="w-full sm:w-36">
                                                 <label className="block text-xs text-muted-foreground mb-1">
-                                                    Değer
+                                                    Operand
                                                 </label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="decimal"
+                                                <select
                                                     value={
-                                                        addStepValue[line.id] ??
-                                                        ((addStepOp[line.id] ?? 'percent') ===
-                                                        'percent'
-                                                            ? '20'
-                                                            : '0')
+                                                        (addStepKind[line.id] ?? 'number') === 'line'
+                                                            ? `line:${addStepLineId[line.id] || prev[0]?.id || ''}`
+                                                            : addStepKind[line.id] ?? 'number'
                                                     }
-                                                    onChange={(e) =>
-                                                        setAddStepValue((s) => ({
-                                                            ...s,
-                                                            [line.id]: e.target.value
-                                                        }))
-                                                    }
-                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                                                />
+                                                    onChange={(e) => {
+                                                        const v = e.target.value;
+                                                        if (v === 'number' || v === 'gross') {
+                                                            setAddStepKind((s) => ({
+                                                                ...s,
+                                                                [line.id]: v
+                                                            }));
+                                                        } else {
+                                                            setAddStepKind((s) => ({
+                                                                ...s,
+                                                                [line.id]: 'line'
+                                                            }));
+                                                            setAddStepLineId((s) => ({
+                                                                ...s,
+                                                                [line.id]: v.replace(/^line:/, '')
+                                                            }));
+                                                        }
+                                                    }}
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                                >
+                                                    <option value="number">Sayı</option>
+                                                    <option value="gross">Brüt maaş</option>
+                                                    {prev.map((p) => (
+                                                        <option key={p.id} value={`line:${p.id}`}>
+                                                            {drafts[p.id]?.name?.trim() ||
+                                                                p.name ||
+                                                                'Kalem'}
+                                                        </option>
+                                                    ))}
+                                                </select>
                                             </div>
+                                            {(addStepKind[line.id] ?? 'number') === 'number' && (
+                                                <div className="w-full sm:w-28">
+                                                    <label className="block text-xs text-muted-foreground mb-1">
+                                                        Değer
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={
+                                                            addStepValue[line.id] ??
+                                                            ((addStepOp[line.id] ?? 'percent') ===
+                                                            'percent'
+                                                                ? '20'
+                                                                : '0')
+                                                        }
+                                                        onChange={(e) =>
+                                                            setAddStepValue((s) => ({
+                                                                ...s,
+                                                                [line.id]: e.target.value
+                                                            }))
+                                                        }
+                                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                    />
+                                                </div>
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => appendStep(line.id)}
@@ -792,6 +1022,22 @@ export default function CompanyFinanceCalculatorPage() {
                             )}
                         </div>
                     </div>
+                    <div className="w-full sm:w-44">
+                        <label className="block text-xs text-muted-foreground mb-1">
+                            Sonuç etkisi
+                        </label>
+                        <select
+                            value={newEffect}
+                            onChange={(e) => setNewEffect(e.target.value as ResultEffect)}
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                            {(Object.keys(RESULT_EFFECT_LABELS) as ResultEffect[]).map((ef) => (
+                                <option key={ef} value={ef}>
+                                    {RESULT_EFFECT_LABELS[ef]}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <button
                         type="submit"
                         disabled={adding || !newName.trim()}
@@ -827,25 +1073,40 @@ export default function CompanyFinanceCalculatorPage() {
                                 if (wl.source_type === 'line' && wl.source_line_id) {
                                     base = amounts.get(wl.source_line_id) ?? 0;
                                 }
-                                const note = formatCompactMathNote(base, wl.steps);
+                                const note = formatCompactMathNote(base, wl.steps, stepCtx);
                                 const amount = amounts.get(wl.id) ?? 0;
-                                const sign = wl.is_deduction ? '−' : '+';
+                                const excluded = wl.result_effect === 'exclude';
+                                const sign =
+                                    wl.result_effect === 'addition'
+                                        ? '+'
+                                        : wl.result_effect === 'deduction'
+                                          ? '−'
+                                          : '';
                                 return (
                                     <div
                                         key={wl.id}
-                                        className="flex justify-between gap-4 items-start"
+                                        className={`flex justify-between gap-4 items-start ${
+                                            excluded ? 'opacity-60' : ''
+                                        }`}
                                     >
                                         <dt className="min-w-0">
                                             <span className="text-foreground">{name}</span>
+                                            {excluded && (
+                                                <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                                    dahil değil
+                                                </span>
+                                            )}
                                             <span className="block text-xs text-muted-foreground font-mono tabular-nums mt-0.5">
                                                 {note}
                                             </span>
                                         </dt>
                                         <dd
                                             className={`font-medium tabular-nums shrink-0 ${
-                                                wl.is_deduction
-                                                    ? 'text-red-400'
-                                                    : 'text-emerald-400'
+                                                excluded
+                                                    ? 'text-muted-foreground'
+                                                    : wl.result_effect === 'deduction'
+                                                      ? 'text-red-400'
+                                                      : 'text-emerald-400'
                                             }`}
                                         >
                                             {sign}

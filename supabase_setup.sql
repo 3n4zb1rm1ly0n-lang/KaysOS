@@ -103,7 +103,7 @@ values (
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------
--- 5) Şirket finansı — brüt maaş hesaplama satırları
+-- 5) Şirket finansı — brüt maaş hesaplama satırları (zincir: add_calc_line_steps.sql)
 -- -----------------------------------------------------------------------------
 create table if not exists company_finance_calc_lines (
   id uuid default uuid_generate_v4() primary key,
@@ -111,14 +111,17 @@ create table if not exists company_finance_calc_lines (
   name text not null,
   percentage numeric not null default 0,
   sort_order integer not null default 0,
-  is_deduction boolean not null default true
+  is_deduction boolean not null default true,
+  source_type text not null default 'gross',
+  source_line_id uuid references company_finance_calc_lines(id) on delete set null,
+  steps jsonb not null default '[]'::jsonb
 );
 
-insert into company_finance_calc_lines (name, percentage, sort_order, is_deduction)
+insert into company_finance_calc_lines (name, percentage, sort_order, is_deduction, source_type, steps)
 select * from (values
-  ('Gelir vergisi', 15::numeric, 0, true),
-  ('SGK / kesinti', 20::numeric, 1, true)
-) as seed(name, percentage, sort_order, is_deduction)
+  ('Gelir vergisi', 15::numeric, 0, true, 'gross', '[{"op":"percent","value":15}]'::jsonb),
+  ('SGK / kesinti', 20::numeric, 1, true, 'gross', '[{"op":"percent","value":20}]'::jsonb)
+) as seed(name, percentage, sort_order, is_deduction, source_type, steps)
 where not exists (select 1 from company_finance_calc_lines limit 1);
 
 -- -----------------------------------------------------------------------------

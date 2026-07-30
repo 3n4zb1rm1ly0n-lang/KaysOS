@@ -3,6 +3,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Plus, Trash2, Save } from 'lucide-react';
+import {
+    applySteps,
+    CALC_OP_LABELS,
+    CALC_OPS,
+    describeStep,
+    parseCalcSteps,
+    resolveLineAmounts,
+    stepsFromPercentage,
+    type CalcOp,
+    type CalcSourceType,
+    type CalcStep
+} from '@/lib/calc-steps';
 
 interface CalcLine {
     id: string;
@@ -10,28 +22,73 @@ interface CalcLine {
     percentage: number;
     sort_order: number;
     is_deduction: boolean;
+    source_type: CalcSourceType;
+    source_line_id: string | null;
+    steps: CalcStep[];
+}
+
+type DraftStep = {
+    op: CalcOp;
+    value: string;
+};
+
+type DraftLine = {
+    name: string;
+    source_type: CalcSourceType;
+    source_line_id: string | null;
+    steps: DraftStep[];
+};
+
+function toCalcSteps(steps: DraftStep[]): CalcStep[] {
+    return steps.map((s) => {
+        const n = parseFloat(s.value.replace(',', '.'));
+        return { op: s.op, value: Number.isFinite(n) ? n : 0 };
+    });
+}
+
+function toDraftSteps(steps: CalcStep[]): DraftStep[] {
+    return steps.map((s) => ({ op: s.op, value: fmtNum(s.value) }));
 }
 
 function fmtMoney(n: number): string {
     return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function fmtPct(n: number): string {
-    const rounded = Math.round(n * 100) / 100;
+function fmtNum(n: number): string {
+    const rounded = Math.round(n * 1000) / 1000;
     return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function firstPercentValue(steps: CalcStep[]): number {
+    const p = steps.find((s) => s.op === 'percent');
+    return p ? p.value : 0;
+}
+
+function isMissingStepsColumnError(err: { message?: string; code?: string } | null): boolean {
+    const msg = (err?.message || '').toLowerCase();
+    return (
+        msg.includes('steps') ||
+        msg.includes('source_type') ||
+        msg.includes('source_line_id') ||
+        err?.code === '42703'
+    );
 }
 
 export default function CompanyFinanceCalculatorPage() {
     const [lines, setLines] = useState<CalcLine[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [schemaHint, setSchemaHint] = useState(false);
     const [grossInput, setGrossInput] = useState('');
     const [savingId, setSavingId] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
     const [newName, setNewName] = useState('');
-    const [newPct, setNewPct] = useState('20');
-    const [draftNames, setDraftNames] = useState<Record<string, string>>({});
-    const [draftPcts, setDraftPcts] = useState<Record<string, string>>({});
+    const [newOp, setNewOp] = useState<CalcOp>('percent');
+    const [newValue, setNewValue] = useState('20');
+    const [drafts, setDrafts] = useState<Record<string, DraftLine>>({});
+    const [addStepOp, setAddStepOp] = useState<Record<string, CalcOp>>({});
+    const [addStepValue, setAddStepValue] = useState<Record<string, string>>({});
+    const [showMathPicker, setShowMathPicker] = useState<Record<string, boolean>>({});
 
     const gross = useMemo(() => {
         const n = parseFloat(grossInput.replace(',', '.'));
@@ -39,40 +96,88 @@ export default function CompanyFinanceCalculatorPage() {
     }, [grossInput]);
 
     const syncDrafts = useCallback((rows: CalcLine[]) => {
-        const names: Record<string, string> = {};
-        const pcts: Record<string, string> = {};
+        const next: Record<string, DraftLine> = {};
         rows.forEach((r) => {
-            names[r.id] = r.name;
-            pcts[r.id] = fmtPct(Number(r.percentage));
+            next[r.id] = {
+                name: r.name,
+                source_type: r.source_type,
+                source_line_id: r.source_line_id,
+                steps: toDraftSteps(r.steps)
+            };
         });
-        setDraftNames(names);
-        setDraftPcts(pcts);
+        setDrafts(next);
     }, []);
+
+    const mapRow = (r: Record<string, unknown>): CalcLine => {
+        const percentage = Number(r.percentage) || 0;
+        let steps = parseCalcSteps(r.steps);
+        if (steps.length === 0 && percentage) {
+            steps = stepsFromPercentage(percentage);
+        }
+        const sourceType = r.source_type === 'line' ? 'line' : 'gross';
+        return {
+            id: String(r.id),
+            name: String(r.name || ''),
+            percentage,
+            sort_order: Number(r.sort_order) || 0,
+            is_deduction: r.is_deduction !== false,
+            source_type: sourceType,
+            source_line_id: r.source_line_id ? String(r.source_line_id) : null,
+            steps
+        };
+    };
 
     const fetchLines = useCallback(async () => {
         setLoading(true);
         setError(null);
-        const { data, error: err } = await supabase
+        setSchemaHint(false);
+
+        const full = await supabase
             .from('company_finance_calc_lines')
             .select('*')
             .order('sort_order', { ascending: true })
             .order('created_at', { ascending: true });
 
-        if (err) {
+        if (full.error && isMissingStepsColumnError(full.error)) {
+            setSchemaHint(true);
+            const basic = await supabase
+                .from('company_finance_calc_lines')
+                .select('id, name, percentage, sort_order, is_deduction, created_at')
+                .order('sort_order', { ascending: true })
+                .order('created_at', { ascending: true });
+
+            if (basic.error) {
+                setError(
+                    basic.error.message.includes('company_finance_calc_lines')
+                        ? `${basic.error.message} — supabase_setup.sql dosyasını SQL Editor’da çalıştırın.`
+                        : basic.error.message
+                );
+                setLines([]);
+            } else {
+                const rows = (basic.data || []).map((r) =>
+                    mapRow({
+                        ...r,
+                        source_type: 'gross',
+                        source_line_id: null,
+                        steps: stepsFromPercentage(Number(r.percentage) || 0)
+                    })
+                );
+                setLines(rows);
+                syncDrafts(rows);
+            }
+            setLoading(false);
+            return;
+        }
+
+        if (full.error) {
             setError(
-                err.message.includes('company_finance_calc_lines')
-                    ? `${err.message} — supabase_setup.sql dosyasını SQL Editor’da çalıştırın.`
-                    : err.message
+                full.error.message.includes('company_finance_calc_lines')
+                    ? `${full.error.message} — supabase_setup.sql dosyasını SQL Editor’da çalıştırın.`
+                    : full.error.message
             );
             setLines([]);
         } else {
-            const rows = (data || []).map((r) => ({
-                id: r.id as string,
-                name: String(r.name || ''),
-                percentage: Number(r.percentage) || 0,
-                sort_order: Number(r.sort_order) || 0,
-                is_deduction: r.is_deduction !== false
-            }));
+            const rows = (full.data || []).map((r) => mapRow(r as Record<string, unknown>));
             setLines(rows);
             syncDrafts(rows);
         }
@@ -83,59 +188,138 @@ export default function CompanyFinanceCalculatorPage() {
         fetchLines();
     }, [fetchLines]);
 
-    const lineAmounts = useMemo(() => {
+    const workingLines = useMemo(() => {
         return lines.map((line) => {
-            const pct = parseFloat((draftPcts[line.id] ?? String(line.percentage)).replace(',', '.'));
-            const p = Number.isFinite(pct) ? pct : 0;
-            const amount = (gross * p) / 100;
-            return { id: line.id, percentage: p, amount, is_deduction: line.is_deduction };
+            const d = drafts[line.id];
+            return {
+                id: line.id,
+                sort_order: line.sort_order,
+                is_deduction: line.is_deduction,
+                source_type: d?.source_type ?? line.source_type,
+                source_line_id: d?.source_line_id ?? line.source_line_id,
+                steps: d ? toCalcSteps(d.steps) : line.steps
+            };
         });
-    }, [lines, draftPcts, gross]);
+    }, [lines, drafts]);
+
+    const amounts = useMemo(
+        () => resolveLineAmounts(workingLines, gross),
+        [workingLines, gross]
+    );
 
     const totalDeductions = useMemo(
         () =>
-            lineAmounts
+            workingLines
                 .filter((l) => l.is_deduction)
-                .reduce((acc, l) => acc + l.amount, 0),
-        [lineAmounts]
+                .reduce((acc, l) => acc + (amounts.get(l.id) ?? 0), 0),
+        [workingLines, amounts]
     );
 
     const totalAdditions = useMemo(
         () =>
-            lineAmounts
+            workingLines
                 .filter((l) => !l.is_deduction)
-                .reduce((acc, l) => acc + l.amount, 0),
-        [lineAmounts]
+                .reduce((acc, l) => acc + (amounts.get(l.id) ?? 0), 0),
+        [workingLines, amounts]
     );
 
     const net = gross - totalDeductions + totalAdditions;
 
+    const updateDraft = (id: string, patch: Partial<DraftLine>) => {
+        setDrafts((d) => ({
+            ...d,
+            [id]: { ...(d[id] || { name: '', source_type: 'gross', source_line_id: null, steps: [] }), ...patch }
+        }));
+    };
+
+    const updateStep = (lineId: string, index: number, patch: Partial<DraftStep>) => {
+        const current = drafts[lineId]?.steps ?? [];
+        const next = current.map((s, i) => (i === index ? { ...s, ...patch } : s));
+        updateDraft(lineId, { steps: next });
+    };
+
+    const removeStep = (lineId: string, index: number) => {
+        const current = drafts[lineId]?.steps ?? [];
+        updateDraft(lineId, { steps: current.filter((_, i) => i !== index) });
+    };
+
+    const appendStep = (lineId: string) => {
+        const op = addStepOp[lineId] ?? 'percent';
+        const raw = addStepValue[lineId] ?? (op === 'percent' ? '20' : '0');
+        const value = parseFloat(raw.replace(',', '.'));
+        if (!Number.isFinite(value)) {
+            alert('Geçerli bir sayı girin.');
+            return;
+        }
+        const current = drafts[lineId]?.steps ?? [];
+        updateDraft(lineId, { steps: [...current, { op, value: raw.trim() || String(value) }] });
+        setShowMathPicker((s) => ({ ...s, [lineId]: false }));
+        setAddStepValue((s) => ({ ...s, [lineId]: op === 'percent' ? '20' : '0' }));
+    };
+
     const saveLine = async (id: string) => {
-        const name = (draftNames[id] || '').trim();
-        const pct = parseFloat((draftPcts[id] || '0').replace(',', '.'));
+        const draft = drafts[id];
+        if (!draft) return;
+        const name = draft.name.trim();
         if (!name) {
             alert('Satır adı boş olamaz.');
             return;
         }
-        if (!Number.isFinite(pct) || pct < 0) {
-            alert('Geçerli bir yüzde girin (0 veya üzeri).');
+        if (draft.steps.length === 0) {
+            alert('En az bir matematik adımı ekleyin.');
+            return;
+        }
+        if (draft.source_type === 'line' && !draft.source_line_id) {
+            alert('Kaynak satır seçin.');
             return;
         }
 
+        const steps = toCalcSteps(draft.steps);
+        const percentage = firstPercentValue(steps);
+        const body = {
+            name,
+            percentage,
+            source_type: draft.source_type,
+            source_line_id: draft.source_type === 'line' ? draft.source_line_id : null,
+            steps
+        };
+
         setSavingId(id);
-        const { error: err } = await supabase
+        let { error: err } = await supabase
             .from('company_finance_calc_lines')
-            .update({ name, percentage: pct })
+            .update(body)
             .eq('id', id);
+
+        if (err && isMissingStepsColumnError(err)) {
+            setSchemaHint(true);
+            ({ error: err } = await supabase
+                .from('company_finance_calc_lines')
+                .update({ name, percentage })
+                .eq('id', id));
+        }
 
         setSavingId(null);
         if (err) {
             alert(`Kayıt başarısız: ${err.message}`);
             return;
         }
+
         setLines((prev) =>
-            prev.map((l) => (l.id === id ? { ...l, name, percentage: pct } : l))
+            prev.map((l) =>
+                l.id === id
+                    ? {
+                          ...l,
+                          name,
+                          percentage,
+                          source_type: draft.source_type,
+                          source_line_id:
+                              draft.source_type === 'line' ? draft.source_line_id : null,
+                          steps
+                      }
+                    : l
+            )
         );
+        updateDraft(id, { steps: toDraftSteps(steps) });
     };
 
     const deleteLine = async (id: string) => {
@@ -148,15 +332,21 @@ export default function CompanyFinanceCalculatorPage() {
             alert(`Silinemedi: ${err.message}`);
             return;
         }
-        setLines((prev) => prev.filter((l) => l.id !== id));
-        setDraftNames((d) => {
+        setLines((prev) =>
+            prev.map((l) =>
+                l.source_line_id === id
+                    ? { ...l, source_type: 'gross' as const, source_line_id: null }
+                    : l
+            ).filter((l) => l.id !== id)
+        );
+        setDrafts((d) => {
             const next = { ...d };
             delete next[id];
-            return next;
-        });
-        setDraftPcts((d) => {
-            const next = { ...d };
-            delete next[id];
+            for (const key of Object.keys(next)) {
+                if (next[key].source_line_id === id) {
+                    next[key] = { ...next[key], source_type: 'gross', source_line_id: null };
+                }
+            }
             return next;
         });
     };
@@ -164,22 +354,43 @@ export default function CompanyFinanceCalculatorPage() {
     const addLine = async (e: React.FormEvent) => {
         e.preventDefault();
         const name = newName.trim();
-        const pct = parseFloat(newPct.replace(',', '.'));
+        const value = parseFloat(newValue.replace(',', '.'));
         if (!name) return;
-        if (!Number.isFinite(pct) || pct < 0) {
-            alert('Geçerli bir yüzde girin.');
+        if (!Number.isFinite(value)) {
+            alert('Geçerli bir sayı girin.');
             return;
         }
 
-        setAdding(true);
+        const steps: CalcStep[] = [{ op: newOp, value }];
+        const percentage = firstPercentValue(steps);
         const sort_order =
             lines.length === 0 ? 0 : Math.max(...lines.map((l) => l.sort_order)) + 1;
 
-        const { data, error: err } = await supabase
+        setAdding(true);
+        const fullBody = {
+            name,
+            percentage,
+            sort_order,
+            is_deduction: true,
+            source_type: 'gross' as const,
+            source_line_id: null,
+            steps
+        };
+
+        let { data, error: err } = await supabase
             .from('company_finance_calc_lines')
-            .insert([{ name, percentage: pct, sort_order, is_deduction: true }])
+            .insert([fullBody])
             .select()
             .single();
+
+        if (err && isMissingStepsColumnError(err)) {
+            setSchemaHint(true);
+            ({ data, error: err } = await supabase
+                .from('company_finance_calc_lines')
+                .insert([{ name, percentage, sort_order, is_deduction: true }])
+                .select()
+                .single());
+        }
 
         setAdding(false);
         if (err || !data) {
@@ -187,18 +398,46 @@ export default function CompanyFinanceCalculatorPage() {
             return;
         }
 
-        const row: CalcLine = {
-            id: data.id,
-            name: data.name,
-            percentage: Number(data.percentage),
-            sort_order: Number(data.sort_order) || 0,
-            is_deduction: data.is_deduction !== false
-        };
+        const row = mapRow(data as Record<string, unknown>);
+        if (row.steps.length === 0) row.steps = steps;
         setLines((prev) => [...prev, row]);
-        setDraftNames((d) => ({ ...d, [row.id]: row.name }));
-        setDraftPcts((d) => ({ ...d, [row.id]: fmtPct(row.percentage) }));
+        setDrafts((d) => ({
+            ...d,
+            [row.id]: {
+                name: row.name,
+                source_type: row.source_type,
+                source_line_id: row.source_line_id,
+                steps: toDraftSteps(row.steps)
+            }
+        }));
         setNewName('');
-        setNewPct('20');
+        setNewOp('percent');
+        setNewValue('20');
+    };
+
+    const previousLinesFor = (lineId: string) => {
+        const idx = lines.findIndex((l) => l.id === lineId);
+        if (idx <= 0) return [];
+        return lines.slice(0, idx);
+    };
+
+    const sourceLabel = (draft: DraftLine) => {
+        if (draft.source_type === 'gross') return 'Brüt maaş';
+        const src = lines.find((l) => l.id === draft.source_line_id);
+        return src?.name || 'Seçili satır';
+    };
+
+    const previewChain = (draft: DraftLine) => {
+        const steps = toCalcSteps(draft.steps);
+        let base = gross;
+        if (draft.source_type === 'line' && draft.source_line_id) {
+            base = amounts.get(draft.source_line_id) ?? 0;
+        }
+        const parts = [
+            `${sourceLabel(draft)} ${fmtMoney(base)}`,
+            ...steps.map(describeStep)
+        ];
+        return { parts: parts.join(' → '), result: applySteps(base, steps) };
     };
 
     return (
@@ -206,9 +445,18 @@ export default function CompanyFinanceCalculatorPage() {
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Hesaplama</h2>
                 <p className="text-muted-foreground mt-1">
-                    Brüt maaş üzerinden yüzde kalemlerini düzenleyin; tutarlar anında hesaplanır.
+                    Her kalem kendi kaynak ve matematik zinciriyle hesaplanır. Burada yalnızca deneme /
+                    formül kurulumu yapılır.
                 </p>
             </div>
+
+            {schemaHint && (
+                <p className="text-sm rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">
+                    Zincir kolonları henüz yok. Supabase SQL Editor’da{' '}
+                    <code className="text-xs">add_calc_line_steps.sql</code> dosyasını çalıştırın;
+                    şimdilik yüzde uyumluluk modu kullanılıyor.
+                </p>
+            )}
 
             <div className="space-y-2">
                 <label htmlFor="gross-salary" className="block text-sm font-medium text-foreground">
@@ -246,18 +494,24 @@ export default function CompanyFinanceCalculatorPage() {
 
                 {!loading && lines.length === 0 && !error && (
                     <p className="text-sm text-muted-foreground">
-                        Henüz satır yok. Aşağıdan vergi veya kesinti yüzdesi ekleyin.
+                        Henüz satır yok. Aşağıdan kalem ve matematik adımı ekleyin.
                     </p>
                 )}
 
                 <ul className="divide-y divide-border border-y border-border">
                     {lines.map((line) => {
-                        const computed = lineAmounts.find((l) => l.id === line.id);
-                        const pctDisplay = draftPcts[line.id] ?? fmtPct(line.percentage);
-                        const pctNum = computed?.percentage ?? Number(line.percentage);
+                        const draft = drafts[line.id] ?? {
+                            name: line.name,
+                            source_type: line.source_type,
+                            source_line_id: line.source_line_id,
+                            steps: toDraftSteps(line.steps)
+                        };
+                        const prev = previousLinesFor(line.id);
+                        const preview = previewChain(draft);
+                        const pickerOpen = showMathPicker[line.id];
 
                         return (
-                            <li key={line.id} className="py-4 space-y-3">
+                            <li key={line.id} className="py-5 space-y-4">
                                 <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                                     <div className="flex-1 min-w-0">
                                         <label className="block text-xs text-muted-foreground mb-1">
@@ -265,37 +519,46 @@ export default function CompanyFinanceCalculatorPage() {
                                         </label>
                                         <input
                                             type="text"
-                                            value={draftNames[line.id] ?? ''}
+                                            value={draft.name}
                                             onChange={(e) =>
-                                                setDraftNames((d) => ({
-                                                    ...d,
-                                                    [line.id]: e.target.value
-                                                }))
+                                                updateDraft(line.id, { name: e.target.value })
                                             }
                                             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                         />
                                     </div>
-                                    <div className="w-full sm:w-28">
+                                    <div className="w-full sm:w-48">
                                         <label className="block text-xs text-muted-foreground mb-1">
-                                            Yüzde
+                                            Kaynak
                                         </label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                inputMode="decimal"
-                                                value={pctDisplay}
-                                                onChange={(e) =>
-                                                    setDraftPcts((d) => ({
-                                                        ...d,
-                                                        [line.id]: e.target.value
-                                                    }))
+                                        <select
+                                            value={
+                                                draft.source_type === 'line' && draft.source_line_id
+                                                    ? `line:${draft.source_line_id}`
+                                                    : 'gross'
+                                            }
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                if (v === 'gross') {
+                                                    updateDraft(line.id, {
+                                                        source_type: 'gross',
+                                                        source_line_id: null
+                                                    });
+                                                } else {
+                                                    updateDraft(line.id, {
+                                                        source_type: 'line',
+                                                        source_line_id: v.replace(/^line:/, '')
+                                                    });
                                                 }
-                                                className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-8 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                                            />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                                                %
-                                            </span>
-                                        </div>
+                                            }}
+                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                        >
+                                            <option value="gross">Brüt maaş</option>
+                                            {prev.map((p) => (
+                                                <option key={p.id} value={`line:${p.id}`}>
+                                                    {p.name || 'İsimsiz kalem'}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0 pb-0.5">
                                         <button
@@ -321,12 +584,161 @@ export default function CompanyFinanceCalculatorPage() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm">
-                                    <p className="text-muted-foreground">
-                                        Brüt maaşın %{fmtPct(pctNum)}&apos;i
+
+                                <div className="space-y-2">
+                                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                        Matematik zinciri
                                     </p>
-                                    <p className="font-medium tabular-nums text-foreground">
-                                        {fmtMoney(computed?.amount ?? 0)}
+                                    {draft.steps.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                            Henüz adım yok. Matematik ekle ile başlayın.
+                                        </p>
+                                    ) : (
+                                        <ul className="space-y-2">
+                                            {draft.steps.map((step, idx) => (
+                                                <li
+                                                    key={`${line.id}-step-${idx}`}
+                                                    className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-border/80 bg-secondary/20 px-3 py-2"
+                                                >
+                                                    <span className="text-xs text-muted-foreground w-6">
+                                                        {idx + 1}.
+                                                    </span>
+                                                    <select
+                                                        value={step.op}
+                                                        onChange={(e) =>
+                                                            updateStep(line.id, idx, {
+                                                                op: e.target.value as CalcOp
+                                                            })
+                                                        }
+                                                        className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                                    >
+                                                        {CALC_OPS.map((op) => (
+                                                            <option key={op} value={op}>
+                                                                {CALC_OP_LABELS[op]}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="relative w-full sm:w-28">
+                                                        <input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            value={step.value}
+                                                            onChange={(e) =>
+                                                                updateStep(line.id, idx, {
+                                                                    value: e.target.value
+                                                                })
+                                                            }
+                                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 pr-7 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                        />
+                                                        {step.op === 'percent' && (
+                                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                                                                %
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeStep(line.id, idx)}
+                                                        className="p-1.5 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-500/10 self-start sm:self-center"
+                                                        aria-label="Adımı sil"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+
+                                    {pickerOpen ? (
+                                        <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border border-dashed border-border p-3">
+                                            <div className="w-full sm:w-36">
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    İşlem
+                                                </label>
+                                                <select
+                                                    value={addStepOp[line.id] ?? 'percent'}
+                                                    onChange={(e) =>
+                                                        setAddStepOp((s) => ({
+                                                            ...s,
+                                                            [line.id]: e.target.value as CalcOp
+                                                        }))
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                                >
+                                                    {CALC_OPS.map((op) => (
+                                                        <option key={op} value={op}>
+                                                            {CALC_OP_LABELS[op]}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="w-full sm:w-28">
+                                                <label className="block text-xs text-muted-foreground mb-1">
+                                                    Değer
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={
+                                                        addStepValue[line.id] ??
+                                                        ((addStepOp[line.id] ?? 'percent') ===
+                                                        'percent'
+                                                            ? '20'
+                                                            : '0')
+                                                    }
+                                                    onChange={(e) =>
+                                                        setAddStepValue((s) => ({
+                                                            ...s,
+                                                            [line.id]: e.target.value
+                                                        }))
+                                                    }
+                                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => appendStep(line.id)}
+                                                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                                Adımı ekle
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setShowMathPicker((s) => ({
+                                                        ...s,
+                                                        [line.id]: false
+                                                    }))
+                                                }
+                                                className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-secondary/50"
+                                            >
+                                                Vazgeç
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setShowMathPicker((s) => ({
+                                                    ...s,
+                                                    [line.id]: true
+                                                }))
+                                            }
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary/50"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Matematik ekle
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm">
+                                    <p className="text-muted-foreground break-all">
+                                        {preview.parts}
+                                    </p>
+                                    <p className="font-medium tabular-nums text-foreground shrink-0">
+                                        {fmtMoney(preview.result)}
                                     </p>
                                 </div>
                             </li>
@@ -348,19 +760,35 @@ export default function CompanyFinanceCalculatorPage() {
                             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                         />
                     </div>
+                    <div className="w-full sm:w-36">
+                        <label className="block text-xs text-muted-foreground mb-1">İlk işlem</label>
+                        <select
+                            value={newOp}
+                            onChange={(e) => setNewOp(e.target.value as CalcOp)}
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                            {CALC_OPS.map((op) => (
+                                <option key={op} value={op}>
+                                    {CALC_OP_LABELS[op]}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <div className="w-full sm:w-28">
-                        <label className="block text-xs text-muted-foreground mb-1">Yüzde</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Değer</label>
                         <div className="relative">
                             <input
                                 type="text"
                                 inputMode="decimal"
-                                value={newPct}
-                                onChange={(e) => setNewPct(e.target.value)}
+                                value={newValue}
+                                onChange={(e) => setNewValue(e.target.value)}
                                 className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-8 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                                %
-                            </span>
+                            {newOp === 'percent' && (
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                                    %
+                                </span>
+                            )}
                         </div>
                     </div>
                     <button

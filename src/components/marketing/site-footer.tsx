@@ -12,7 +12,7 @@ export function SiteFooter() {
                 <p className="text-sm text-[#6B7280]">
                     © {year} Kaysia. Dijital ürünler ve{' '}
                     <Link
-                        href="/app"
+                        href="/app/dashboard"
                         className="text-inherit no-underline hover:text-inherit focus:outline-none cursor-text"
                         aria-label="App"
                     >

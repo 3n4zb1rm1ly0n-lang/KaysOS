@@ -16,9 +16,12 @@ import {
     formatDayLabel,
     mergeMonthFromRows,
     monthDateRange,
+    monthlyTargetRows,
     nextDailyThreshold,
+    paceProjection,
     projectScenario,
     readLocalMonthEntries,
+    remainingWorkDaySlots,
     summarizeMonth,
     toDbPayload
 } from '@/lib/paket-prim';
@@ -113,6 +116,26 @@ export default function PaketPrimPage() {
     }, [year, monthIndex, loadMonth]);
 
     const summary = useMemo(() => summarizeMonth(entries), [entries]);
+
+    const remainDays = useMemo(
+        () => remainingWorkDaySlots(entries, todayStr()),
+        [entries]
+    );
+
+    const targetRows = useMemo(
+        () => monthlyTargetRows(summary.totalPackages, remainDays),
+        [summary.totalPackages, remainDays]
+    );
+
+    const pace = useMemo(
+        () =>
+            paceProjection(
+                summary.totalPackages,
+                summary.avgPackagesPerWorkDay,
+                remainDays
+            ),
+        [summary.totalPackages, summary.avgPackagesPerWorkDay, remainDays]
+    );
 
     const shiftMonth = useCallback(
         (delta: number) => {
@@ -304,22 +327,167 @@ export default function PaketPrimPage() {
                 />
             </section>
 
-            {summary.nextMonthly && (
-                <p className="text-sm text-muted-foreground">
-                    Aylık bonus için bir sonraki eşik:{' '}
-                    <span className="text-foreground font-medium">
-                        {summary.nextMonthly.nextMin} paket
-                    </span>{' '}
-                    ({fmtMoney(summary.nextMonthly.nextAmount)}) —{' '}
-                    <span className="text-foreground font-medium">
-                        {summary.nextMonthly.remaining} paket
-                    </span>{' '}
-                    kaldı.
-                    {summary.avgPackagesPerWorkDay > 0 && (
-                        <> Ort. {summary.avgPackagesPerWorkDay.toFixed(1)} pkt/gün.</>
-                    )}
-                </p>
-            )}
+            {/* 3 özet tablo */}
+            <section className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                {/* 1 — Sonraki eşik */}
+                <div className="rounded-xl border border-border overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-border bg-secondary/20">
+                        <h2 className="text-sm font-semibold">Sonraki aylık eşik</h2>
+                    </div>
+                    <div className="p-4 space-y-2 text-sm">
+                        {summary.nextMonthly ? (
+                            <>
+                                <div className="flex justify-between gap-2">
+                                    <span className="text-muted-foreground">Hedef</span>
+                                    <span className="font-medium tabular-nums">
+                                        {summary.nextMonthly.nextMin} paket
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-2">
+                                    <span className="text-muted-foreground">Bonus</span>
+                                    <span className="font-medium tabular-nums">
+                                        {fmtMoney(summary.nextMonthly.nextAmount)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-2">
+                                    <span className="text-muted-foreground">Kalan</span>
+                                    <span className="font-medium tabular-nums text-primary">
+                                        {summary.nextMonthly.remaining} paket
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-2">
+                                    <span className="text-muted-foreground">Ort. tempo</span>
+                                    <span className="tabular-nums">
+                                        {summary.avgPackagesPerWorkDay > 0
+                                            ? `${summary.avgPackagesPerWorkDay.toFixed(1)} pkt/gün`
+                                            : '—'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-2 pt-1 border-t border-border">
+                                    <span className="text-muted-foreground">
+                                        Kalan günde hedef
+                                    </span>
+                                    <span className="font-semibold tabular-nums">
+                                        {remainDays > 0
+                                            ? `${Math.ceil(summary.nextMonthly.remaining / remainDays)} pkt/gün`
+                                            : 'Gün kalmadı'}
+                                    </span>
+                                </div>
+                            </>
+                        ) : summary.monthlyBonusAmount > 0 ? (
+                            <p className="text-muted-foreground">En üst aylık bonus basamağındasın.</p>
+                        ) : (
+                            <p className="text-muted-foreground">Henüz paket girilmedi.</p>
+                        )}
+                    </div>
+                </div>
+
+                {/* 2 — Eşiklere göre günlük paket */}
+                <div className="rounded-xl border border-border overflow-hidden lg:col-span-1">
+                    <div className="px-4 py-2.5 border-b border-border bg-secondary/20 flex items-center justify-between gap-2">
+                        <h2 className="text-sm font-semibold">Eşik → günlük hedef</h2>
+                        <span className="text-[11px] text-muted-foreground">
+                            {remainDays} kalan iş günü
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto max-h-[280px] overflow-y-auto">
+                        <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-background text-xs text-muted-foreground">
+                                <tr className="border-b border-border">
+                                    <th className="text-left font-medium px-3 py-2">Eşik</th>
+                                    <th className="text-right font-medium px-3 py-2">Kalan</th>
+                                    <th className="text-right font-medium px-3 py-2">Pkt/gün</th>
+                                    <th className="text-right font-medium px-3 py-2">Bonus</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {targetRows.map((row) => (
+                                    <tr
+                                        key={row.min}
+                                        className={
+                                            row.reached
+                                                ? 'bg-primary/5 text-muted-foreground'
+                                                : summary.nextMonthly?.nextMin === row.min
+                                                  ? 'bg-primary/10'
+                                                  : ''
+                                        }
+                                    >
+                                        <td className="px-3 py-1.5 tabular-nums">
+                                            {row.min}
+                                            {row.reached ? ' ✓' : ''}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums">
+                                            {row.reached ? '—' : row.remaining}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                                            {row.reached
+                                                ? '—'
+                                                : row.perDay === null
+                                                  ? '—'
+                                                  : row.perDay}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums">
+                                            {fmtMoney(row.bonus)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
+                        Pkt/gün = kalan paket ÷ kalan iş günü (Pazar boşsa izin sayılır).
+                    </p>
+                </div>
+
+                {/* 3 — Tempo tahmini */}
+                <div className="rounded-xl border border-border overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-border bg-secondary/20">
+                        <h2 className="text-sm font-semibold">Tempo tahmini</h2>
+                    </div>
+                    <div className="p-4 space-y-2 text-sm">
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Şu an</span>
+                            <span className="font-medium tabular-nums">
+                                {summary.totalPackages} paket
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Ort. pkt/gün</span>
+                            <span className="tabular-nums">
+                                {summary.avgPackagesPerWorkDay > 0
+                                    ? summary.avgPackagesPerWorkDay.toFixed(1)
+                                    : '—'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Kalan iş günü</span>
+                            <span className="tabular-nums">{pace.remainingDays}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 pt-1 border-t border-border">
+                            <span className="text-muted-foreground">Ay sonu tahmini</span>
+                            <span className="font-semibold tabular-nums">
+                                {pace.projectedTotal} paket
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Tahmini bonus</span>
+                            <span className="font-medium tabular-nums text-primary">
+                                {fmtMoney(pace.projectedBonus)}
+                            </span>
+                        </div>
+                        {pace.next && (
+                            <div className="flex justify-between gap-2 text-xs">
+                                <span className="text-muted-foreground">
+                                    Tahminden sonraki eşik
+                                </span>
+                                <span className="tabular-nums">
+                                    {pace.next.nextMin} (+{pace.next.remaining})
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
 
             <section className="rounded-xl border border-border overflow-hidden">
                 <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center justify-between gap-2">

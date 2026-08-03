@@ -238,6 +238,84 @@ export function projectScenario(
     };
 }
 
+/** Kalan iş günü: bugün ve sonrası, izin değil, henüz iş girilmemiş; Pazar boşsa varsayılan izin */
+export function remainingWorkDaySlots(
+    entries: PackageDayEntry[],
+    today = new Date().toISOString().slice(0, 10)
+): number {
+    let n = 0;
+    for (const e of entries) {
+        if (e.date < today) continue;
+        if (e.status === 'leave' || e.status === 'work') continue;
+        const [y, m, d] = e.date.split('-').map(Number);
+        if (new Date(y, m - 1, d).getDay() === 0) continue; // Pazar
+        n += 1;
+    }
+    return n;
+}
+
+export type MonthlyTargetRow = {
+    min: number;
+    max: number | null;
+    bonus: number;
+    remaining: number;
+    /** Kalan iş gününe bölünmüş, yukarı yuvarlanmış günlük hedef */
+    perDay: number | null;
+    reached: boolean;
+};
+
+/** Aylık bonus eşikleri + kalan güne göre günlük paket ihtiyacı */
+export function monthlyTargetRows(
+    totalPackages: number,
+    remainingDays: number
+): MonthlyTargetRow[] {
+    return MONTHLY_BONUS_BRACKETS.map((b) => {
+        const remaining = Math.max(0, b.min - totalPackages);
+        const reached = totalPackages >= b.min;
+        let perDay: number | null = null;
+        if (!reached && remainingDays > 0) {
+            perDay = Math.ceil(remaining / remainingDays);
+        } else if (!reached && remainingDays <= 0) {
+            perDay = null;
+        } else {
+            perDay = 0;
+        }
+        return {
+            min: b.min,
+            max: b.max,
+            bonus: b.amount,
+            remaining,
+            perDay,
+            reached
+        };
+    });
+}
+
+export type PaceProjection = {
+    remainingDays: number;
+    projectedTotal: number;
+    projectedBonus: number;
+    next: { remaining: number; nextAmount: number; nextMin: number } | null;
+};
+
+/** Mevcut ortalamayla ay sonu tahmini */
+export function paceProjection(
+    totalPackages: number,
+    avgPerDay: number,
+    remainingDays: number
+): PaceProjection {
+    const projectedTotal =
+        remainingDays > 0 && avgPerDay > 0
+            ? Math.round(totalPackages + avgPerDay * remainingDays)
+            : totalPackages;
+    return {
+        remainingDays,
+        projectedTotal,
+        projectedBonus: monthlyBonus(projectedTotal),
+        next: nextMonthlyThreshold(projectedTotal)
+    };
+}
+
 export function emptyMonthEntries(year: number, monthIndex: number): PackageDayEntry[] {
     return daysInMonth(year, monthIndex).map((date) => ({
         date,

@@ -16,7 +16,8 @@ import {
     ChevronDown,
     ChevronRight,
     Wallet,
-    Mail
+    Mail,
+    Package
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -42,6 +43,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Aylık kazanç',
         href: '/app/dashboard/company-finance/monthly',
         icon: Wallet
+    },
+    {
+        id: 'cf-paket-prim',
+        label: 'Paket prim',
+        href: '/app/dashboard/company-finance/paket-prim',
+        icon: Package
     }
 ];
 

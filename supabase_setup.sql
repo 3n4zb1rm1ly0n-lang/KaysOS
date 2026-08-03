@@ -160,6 +160,31 @@ create table if not exists company_finance_monthly_expenses (
 create index if not exists company_finance_monthly_expenses_entry_idx
   on company_finance_monthly_expenses (monthly_entry_id);
 
+-- -----------------------------------------------------------------------------
+-- 5b) Paket prim günlük kayıtlar (detay: create_paket_prim_days.sql)
+-- -----------------------------------------------------------------------------
+create table if not exists company_finance_paket_prim_days (
+  id uuid default uuid_generate_v4() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  work_date date not null,
+  status text not null default 'work'
+    check (status in ('work', 'leave')),
+  packages integer not null default 0
+    check (packages >= 0),
+  tip text
+    check (tip is null or tip in ('hemen', 'sanal')),
+  note text not null default '',
+  unique (work_date),
+  constraint company_finance_paket_prim_days_status_payload check (
+    (status = 'leave' and tip is null and packages = 0)
+    or (status = 'work' and tip in ('hemen', 'sanal'))
+  )
+);
+
+create index if not exists company_finance_paket_prim_days_date_idx
+  on company_finance_paket_prim_days (work_date);
+
 create table if not exists company_finance_income_tax_brackets (
   id uuid default uuid_generate_v4() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
@@ -256,6 +281,7 @@ alter table site_content enable row level security;
 alter table company_finance_calc_lines enable row level security;
 alter table company_finance_monthly_entries enable row level security;
 alter table company_finance_monthly_expenses enable row level security;
+alter table company_finance_paket_prim_days enable row level security;
 alter table company_finance_income_tax_brackets enable row level security;
 alter table company_finance_kdv_presets enable row level security;
 alter table ecosystem_items enable row level security;
@@ -281,6 +307,9 @@ create policy "Enable access to all users" on company_finance_monthly_entries fo
 
 drop policy if exists "Enable access to all users" on company_finance_monthly_expenses;
 create policy "Enable access to all users" on company_finance_monthly_expenses for all using (true) with check (true);
+
+drop policy if exists "Enable access to all users" on company_finance_paket_prim_days;
+create policy "Enable access to all users" on company_finance_paket_prim_days for all using (true) with check (true);
 
 drop policy if exists "Enable access to all users" on company_finance_income_tax_brackets;
 create policy "Enable access to all users" on company_finance_income_tax_brackets for all using (true) with check (true);

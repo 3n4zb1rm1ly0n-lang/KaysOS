@@ -10,7 +10,15 @@ export function SiteFooter() {
                     <KaysiaLogo markClassName="h-6 w-6" wordmarkClassName="text-base md:text-lg" />
                 </Link>
                 <p className="text-sm text-[#6B7280]">
-                    © {year} Kaysia. Dijital ürünler ve web sistemleri.
+                    © {year} Kaysia. Dijital ürünler ve{' '}
+                    <Link
+                        href="/app"
+                        className="text-inherit no-underline hover:text-inherit focus:outline-none cursor-text"
+                        aria-label="App"
+                    >
+                        web
+                    </Link>{' '}
+                    sistemleri.
                 </p>
             </div>
         </footer>

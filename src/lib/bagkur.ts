@@ -140,18 +140,17 @@ export type BagkurSummary = {
 export function summarizeBagkur(
     rows: BagkurMonthRow[],
     penaltyRatio: number,
-    /** Faiz yalnızca bu aya kadar olan (dahil) ödenmemişler için — gelecek aylar faizsiz ana */
-    interestThrough?: { year: number; month: number }
+    /** Bu aya kadar (dahil) borç sayılır; sonrası planlanan, borca girmez */
+    through?: { year: number; month: number }
 ): BagkurSummary {
     const now = new Date();
-    const through = interestThrough ?? {
+    const asOf = through ?? {
         year: now.getFullYear(),
         month: now.getMonth() + 1
     };
 
     let unpaidPrincipal = 0;
     let paidPrincipal = 0;
-    let interestBase = 0;
     let unpaidMonths = 0;
     let paidMonths = 0;
 
@@ -170,6 +169,8 @@ export function summarizeBagkur(
 
     for (const r of rows) {
         const prim = Number(r.prim_amount) || 0;
+        const accrued = compareYm(r, asOf) <= 0;
+
         let y = yearMap.get(r.year);
         if (!y) {
             y = {
@@ -183,6 +184,10 @@ export function summarizeBagkur(
             };
             yearMap.set(r.year, y);
         }
+
+        // Yıllık satır sayacı: yalnızca tahakkuk etmiş aylar
+        if (!accrued) continue;
+
         y.months += 1;
         y.principal += prim;
 
@@ -196,14 +201,11 @@ export function summarizeBagkur(
             unpaidPrincipal += prim;
             y.unpaidMonths += 1;
             y.unpaidPrincipal += prim;
-            if (compareYm(r, through) <= 0) {
-                interestBase += prim;
-                y.interestBase += prim;
-            }
+            y.interestBase += prim;
         }
     }
 
-    const interest = round2(interestBase * penaltyRatio);
+    const interest = round2(unpaidPrincipal * penaltyRatio);
     const byYear: YearSummary[] = Array.from(yearMap.entries())
         .sort(([a], [b]) => a - b)
         .map(([year, y]) => {
@@ -230,6 +232,34 @@ export function summarizeBagkur(
         paidMonths,
         byYear
     };
+}
+
+/** Satır bazlı faiz: ödenmemiş + tahakkuk etmiş ise prim × oran */
+export function monthInterestAmount(
+    row: BagkurMonthRow,
+    penaltyRatio: number,
+    through?: { year: number; month: number }
+): number | null {
+    const now = new Date();
+    const asOf = through ?? {
+        year: now.getFullYear(),
+        month: now.getMonth() + 1
+    };
+    if (compareYm(row, asOf) > 0) return null; // henüz gelmedi
+    if (row.is_paid) return 0;
+    return round2((Number(row.prim_amount) || 0) * penaltyRatio);
+}
+
+export function isFutureMonth(
+    row: { year: number; month: number },
+    through?: { year: number; month: number }
+): boolean {
+    const now = new Date();
+    const asOf = through ?? {
+        year: now.getFullYear(),
+        month: now.getMonth() + 1
+    };
+    return compareYm(row, asOf) > 0;
 }
 
 export function round2(n: number): number {

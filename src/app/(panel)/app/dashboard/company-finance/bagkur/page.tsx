@@ -12,6 +12,8 @@ import {
     defaultThrough,
     fmtMoney,
     fmtPct,
+    isFutureMonth,
+    monthInterestAmount,
     monthLabel,
     summarizeBagkur
 } from '@/lib/bagkur';
@@ -337,10 +339,11 @@ export default function BagkurPage() {
                         </button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Varsayılan oran {fmtPct(settings.sgk_penalty_ref / settings.sgk_principal_ref)}{' '}
-                        = {fmtMoney(settings.sgk_penalty_ref)} ÷ {fmtMoney(settings.sgk_principal_ref)}.
-                        Faiz = (bugüne kadar ödenmemiş primler) × oran. Gelecek aylar ana borca dahil,
-                        faize değil.
+                        Varsayılan oran{' '}
+                        {fmtPct(settings.sgk_penalty_ref / settings.sgk_principal_ref)} ={' '}
+                        {fmtMoney(settings.sgk_penalty_ref)} ÷{' '}
+                        {fmtMoney(settings.sgk_principal_ref)}. Faiz = tahakkuk etmiş ödenmemiş
+                        prim × oran. Gelecek aylar listede görünür ama borca dahil edilmez.
                     </p>
                 </section>
             )}
@@ -424,46 +427,75 @@ export default function BagkurPage() {
                                     <tr className="border-b border-border">
                                         <th className="text-left font-medium px-4 py-2">Ay</th>
                                         <th className="text-right font-medium px-4 py-2">Prim</th>
+                                        <th className="text-right font-medium px-4 py-2">Faiz</th>
                                         <th className="text-center font-medium px-4 py-2">Ödendi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
                                     {rows
                                         .filter((r) => r.year === year)
-                                        .map((row) => (
-                                            <tr
-                                                key={`${row.year}-${row.month}`}
-                                                className={row.is_paid ? 'opacity-60' : ''}
-                                            >
-                                                <td className="px-4 py-2">
-                                                    {monthLabel(row.month)} {row.year}
-                                                </td>
-                                                <td className="px-4 py-2 text-right">
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        defaultValue={row.prim_amount}
-                                                        key={`prim-${row.year}-${row.month}-${row.prim_amount}`}
-                                                        onBlur={(e) =>
-                                                            void updatePrim(row, e.target.value)
-                                                        }
-                                                        className="w-32 ml-auto block rounded-lg border border-border bg-background px-2 py-1.5 text-right tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-2 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={row.is_paid}
-                                                        disabled={saving}
-                                                        onChange={(e) =>
-                                                            void togglePaid(row, e.target.checked)
-                                                        }
-                                                        className="h-4 w-4 accent-primary"
-                                                        aria-label={`${monthLabel(row.month)} ödendi`}
-                                                    />
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        .map((row) => {
+                                            const future = isFutureMonth(row);
+                                            const faiz = monthInterestAmount(
+                                                row,
+                                                settings.penalty_ratio
+                                            );
+                                            return (
+                                                <tr
+                                                    key={`${row.year}-${row.month}`}
+                                                    className={
+                                                        row.is_paid
+                                                            ? 'opacity-60'
+                                                            : future
+                                                              ? 'opacity-50'
+                                                              : ''
+                                                    }
+                                                >
+                                                    <td className="px-4 py-2">
+                                                        {monthLabel(row.month)} {row.year}
+                                                        {future && (
+                                                            <span className="ml-2 text-[11px] text-muted-foreground">
+                                                                planlanan
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            defaultValue={row.prim_amount}
+                                                            key={`prim-${row.year}-${row.month}-${row.prim_amount}`}
+                                                            onBlur={(e) =>
+                                                                void updatePrim(row, e.target.value)
+                                                            }
+                                                            className="w-32 ml-auto block rounded-lg border border-border bg-background px-2 py-1.5 text-right tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                                        />
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                                        {faiz === null
+                                                            ? '—'
+                                                            : row.is_paid
+                                                              ? fmtMoney(0)
+                                                              : fmtMoney(faiz)}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={row.is_paid}
+                                                            disabled={saving || future}
+                                                            onChange={(e) =>
+                                                                void togglePaid(
+                                                                    row,
+                                                                    e.target.checked
+                                                                )
+                                                            }
+                                                            className="h-4 w-4 accent-primary"
+                                                            aria-label={`${monthLabel(row.month)} ödendi`}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                 </tbody>
                             </table>
                         </div>

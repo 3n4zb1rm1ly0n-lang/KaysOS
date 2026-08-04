@@ -204,7 +204,7 @@ export function summarizeBagkur(
     }
 
     const interest = round2(interestBase * penaltyRatio);
-    const byYear: YearSummary[] = [...yearMap.entries()]
+    const byYear: YearSummary[] = Array.from(yearMap.entries())
         .sort(([a], [b]) => a - b)
         .map(([year, y]) => {
             const yi = round2(y.interestBase * penaltyRatio);

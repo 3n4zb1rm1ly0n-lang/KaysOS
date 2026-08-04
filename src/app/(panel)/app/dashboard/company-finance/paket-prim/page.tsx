@@ -10,13 +10,14 @@ import {
     HOURS_PER_DAY,
     type BonusTip,
     type PackageDayEntry,
-    canSetLeave,
+    applyDefaultMondayLeave,
     dailyPrim,
     emptyMonthEntries,
     formatDayLabel,
     mergeMonthFromRows,
     monthDateRange,
     monthlyTargetRows,
+    moveLeaveTo,
     nextDailyThreshold,
     paceProjection,
     projectScenario,
@@ -104,6 +105,23 @@ export default function PaketPrimPage() {
                     merged = local;
                     setStatus(`${localFilled.length} yerel kayıt veritabanına aktarıldı.`);
                 }
+            }
+        }
+
+        // Her hafta varsayılan Pazartesi izni (boş + haftada başka izin yoksa)
+        const { entries: withLeave, seeded } = applyDefaultMondayLeave(merged);
+        if (seeded.length > 0) {
+            const payloads = seeded
+                .map(toDbPayload)
+                .filter((p): p is NonNullable<typeof p> => p !== null);
+            const { error: seedErr } = await supabase.from(TABLE).upsert(payloads, {
+                onConflict: 'work_date'
+            });
+            if (seedErr) {
+                setError(seedErr.message);
+            } else {
+                merged = withLeave;
+                setStatus(`${seeded.length} Pazartesi varsayılan izin olarak işaretlendi.`);
             }
         }
 
@@ -223,13 +241,47 @@ export default function PaketPrimPage() {
 
     const setLeave = useCallback(
         async (date: string) => {
-            if (!canSetLeave(entries, date)) {
-                setError('Bu hafta zaten bir izin günü var.');
+            const { entries: next, cleared } = moveLeaveTo(entries, date);
+            setSavingDate(date);
+            setError(null);
+            setStatus(null);
+
+            // Eski izinleri temizle
+            for (const d of cleared) {
+                const { error: delErr } = await supabase.from(TABLE).delete().eq('work_date', d);
+                if (delErr) {
+                    setError(delErr.message);
+                    setSavingDate(null);
+                    return;
+                }
+            }
+
+            const leaveEntry = next.find((e) => e.date === date);
+            const payload = leaveEntry ? toDbPayload(leaveEntry) : null;
+            if (!payload) {
+                setError('İzin kaydı oluşturulamadı.');
+                setSavingDate(null);
                 return;
             }
-            await persistEntry({ date, status: 'leave', packages: 0, tip: null });
+
+            const { error: upErr } = await supabase.from(TABLE).upsert(payload, {
+                onConflict: 'work_date'
+            });
+            if (upErr) {
+                setError(upErr.message);
+                setSavingDate(null);
+                return;
+            }
+
+            setEntries(next);
+            setStatus(
+                cleared.length > 0
+                    ? `${formatDayLabel(date)} izin (önceki izin taşındı).`
+                    : `${formatDayLabel(date)} izin kaydedildi.`
+            );
+            setSavingDate(null);
         },
-        [entries, persistEntry]
+        [entries]
     );
 
     const clearDay = useCallback(
@@ -435,7 +487,7 @@ export default function PaketPrimPage() {
                         </table>
                     </div>
                     <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
-                        Pkt/gün = kalan paket ÷ kalan iş günü (Pazar boşsa izin sayılır).
+                        Pkt/gün = kalan paket ÷ kalan iş günü (izinler hariç; varsayılan izin Pazartesi).
                     </p>
                 </div>
 
@@ -493,7 +545,7 @@ export default function PaketPrimPage() {
                 <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center justify-between gap-2">
                     <h2 className="text-sm font-semibold">Günlük kayıt</h2>
                     <span className="text-xs text-muted-foreground">
-                        Haftada en fazla 1 izin · Supabase
+                        Haftada 1 izin · varsayılan Pazartesi · Supabase
                     </span>
                 </div>
 
@@ -509,7 +561,7 @@ export default function PaketPrimPage() {
                                 key={entry.date}
                                 entry={entry}
                                 isToday={entry.date === today}
-                                leaveAllowed={canSetLeave(entries, entry.date)}
+                                leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
                                 onSaveWork={saveWorkDay}
                                 onLeave={() => void setLeave(entry.date)}

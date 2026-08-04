@@ -238,7 +238,7 @@ export function projectScenario(
     };
 }
 
-/** Kalan iş günü: bugün ve sonrası, izin değil, henüz iş girilmemiş; Pazar boşsa varsayılan izin */
+/** Kalan iş günü: bugün ve sonrası, izin değil, henüz paket girilmemiş */
 export function remainingWorkDaySlots(
     entries: PackageDayEntry[],
     today = new Date().toISOString().slice(0, 10)
@@ -247,11 +247,65 @@ export function remainingWorkDaySlots(
     for (const e of entries) {
         if (e.date < today) continue;
         if (e.status === 'leave' || e.status === 'work') continue;
-        const [y, m, d] = e.date.split('-').map(Number);
-        if (new Date(y, m - 1, d).getDay() === 0) continue; // Pazar
         n += 1;
     }
     return n;
+}
+
+export function isMonday(dateStr: string): boolean {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay() === 1;
+}
+
+/**
+ * Boş Pazartesileri varsayılan izin yapar (haftada başka izin yoksa).
+ * Dönüş: güncellenmiş ay + DB'ye yazılacak izin satırları.
+ */
+export function applyDefaultMondayLeave(entries: PackageDayEntry[]): {
+    entries: PackageDayEntry[];
+    seeded: PackageDayEntry[];
+} {
+    const next = entries.map((e) => ({ ...e }));
+    const seeded: PackageDayEntry[] = [];
+
+    for (let i = 0; i < next.length; i++) {
+        const e = next[i];
+        if (e.status !== 'empty') continue;
+        if (!isMonday(e.date)) continue;
+        if (!canSetLeave(next, e.date)) continue;
+        const leave: PackageDayEntry = {
+            date: e.date,
+            status: 'leave',
+            packages: 0,
+            tip: null
+        };
+        next[i] = leave;
+        seeded.push(leave);
+    }
+
+    return { entries: next, seeded };
+}
+
+/**
+ * İzni bu güne taşı: aynı ISO haftasındaki diğer izinleri temizler.
+ */
+export function moveLeaveTo(
+    entries: PackageDayEntry[],
+    dateStr: string
+): { entries: PackageDayEntry[]; cleared: string[] } {
+    const week = isoWeekKey(dateStr);
+    const cleared: string[] = [];
+    const next = entries.map((e) => {
+        if (e.date === dateStr) {
+            return { ...e, status: 'leave' as const, packages: 0, tip: null };
+        }
+        if (e.status === 'leave' && isoWeekKey(e.date) === week) {
+            cleared.push(e.date);
+            return { ...e, status: 'empty' as const, packages: 0, tip: null };
+        }
+        return e;
+    });
+    return { entries: next, cleared };
 }
 
 export type MonthlyTargetRow = {

@@ -224,7 +224,7 @@ export default function BagkurPage() {
 
     const years = useMemo(() => {
         const set = new Set(rows.map((r) => r.year));
-        return [...set].sort((a, b) => a - b);
+        return Array.from(set).sort((a, b) => a - b);
     }, [rows]);
 
     return (

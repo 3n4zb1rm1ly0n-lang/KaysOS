@@ -8,11 +8,14 @@ import {
     type BagkurSettings,
     buildSchedule,
     calibrateRatio,
+    defaultPrimFor,
     defaultSettings,
     defaultThrough,
+    editablePrimYears,
     fmtMoney,
     fmtPct,
     isFutureMonth,
+    mergeYearlyPrims,
     monthInterestAmount,
     monthLabel,
     summarizeBagkur
@@ -43,7 +46,8 @@ export default function BagkurPage() {
             s.company_start_month,
             through.year,
             through.month,
-            existing
+            existing,
+            s.yearly_prims
         );
         const missing = schedule.filter(
             (r) => !existing.some((e) => e.year === r.year && e.month === r.month)
@@ -90,7 +94,7 @@ export default function BagkurPage() {
             const msg = settingsRes.error?.message || monthsRes.error?.message || 'Yükleme hatası';
             setError(
                 msg.includes('does not exist') || settingsRes.error?.code === '42P01'
-                    ? 'Tablo bulunamadı. Supabase’te create_bagkur.sql dosyasını çalıştırın.'
+                    ? 'Tablo bulunamadı. Supabase’te create_bagkur.sql (veya add_bagkur_yearly_prims.sql) çalıştırın.'
                     : msg
             );
             setLoading(false);
@@ -110,6 +114,7 @@ export default function BagkurPage() {
                     sgk_principal_ref: s.sgk_principal_ref,
                     sgk_penalty_ref: s.sgk_penalty_ref,
                     sgk_total_ref: s.sgk_total_ref,
+                    yearly_prims: s.yearly_prims,
                     note: ''
                 })
                 .select('*')
@@ -143,7 +148,11 @@ export default function BagkurPage() {
         setError(null);
         const pct = parseFloat(ratioInput.replace(',', '.'));
         const ratio = Number.isFinite(pct) ? pct / 100 : settings.penalty_ratio;
-        const next = { ...settings, penalty_ratio: ratio };
+        const next = {
+            ...settings,
+            penalty_ratio: ratio,
+            yearly_prims: mergeYearlyPrims(settings.yearly_prims)
+        };
 
         const { error: upErr } = await supabase
             .from(SETTINGS_TABLE)
@@ -152,19 +161,61 @@ export default function BagkurPage() {
                 sgk_principal_ref: next.sgk_principal_ref,
                 sgk_penalty_ref: next.sgk_penalty_ref,
                 sgk_total_ref: next.sgk_total_ref,
+                yearly_prims: next.yearly_prims,
                 note: next.note
             })
             .eq('id', settings.id!);
 
         if (upErr) {
-            setError(upErr.message);
+            setError(
+                upErr.message.includes('yearly_prims')
+                    ? 'yearly_prims kolonu yok. Supabase’te add_bagkur_yearly_prims.sql çalıştırın.'
+                    : upErr.message
+            );
             setSaving(false);
             return;
         }
+
+        // Ödenmemiş ayların primini yıl ayarına göre güncelle
+        const updates: { year: number; month: number; prim_amount: number }[] = [];
+        for (const r of rows) {
+            if (r.is_paid) continue;
+            const target = defaultPrimFor(r.year, r.month, next.yearly_prims);
+            if (Math.abs(target - Number(r.prim_amount)) > 0.001) {
+                updates.push({ year: r.year, month: r.month, prim_amount: target });
+            }
+        }
+        if (updates.length > 0) {
+            for (const u of updates) {
+                const { error: mErr } = await supabase
+                    .from(MONTHS_TABLE)
+                    .update({ prim_amount: u.prim_amount })
+                    .eq('year', u.year)
+                    .eq('month', u.month)
+                    .eq('is_paid', false);
+                if (mErr) {
+                    setError(mErr.message);
+                    setSaving(false);
+                    return;
+                }
+            }
+            setRows((prev) =>
+                prev.map((r) => {
+                    if (r.is_paid) return r;
+                    const t = defaultPrimFor(r.year, r.month, next.yearly_prims);
+                    return { ...r, prim_amount: t };
+                })
+            );
+        }
+
         setSettings(next);
-        setStatus('Ayarlar kaydedildi.');
+        setStatus(
+            updates.length > 0
+                ? `Ayarlar kaydedildi. ${updates.length} ödenmemiş ay primi güncellendi.`
+                : 'Ayarlar kaydedildi.'
+        );
         setSaving(false);
-    }, [ratioInput, settings]);
+    }, [ratioInput, settings, rows]);
 
     const calibrate = useCallback(() => {
         const ratio = calibrateRatio(summary.unpaidPrincipal, settings.sgk_penalty_ref);
@@ -248,7 +299,7 @@ export default function BagkurPage() {
                     onClick={() => setSettingsOpen((o) => !o)}
                     className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary/50"
                 >
-                    {settingsOpen ? 'Ayarları gizle' : 'Faiz / SGK ayarları'}
+                    {settingsOpen ? 'Ayarları gizle' : 'Faiz / prim ayarları'}
                 </button>
             </header>
 
@@ -321,6 +372,44 @@ export default function BagkurPage() {
                             />
                         </label>
                     </div>
+
+                    <div className="pt-2 border-t border-border space-y-3">
+                        <div>
+                            <h3 className="text-sm font-semibold">Yıllık Bağkur primi (indirimsiz)</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                Yeni yıllar için tutar belli olunca buradan gir. Kayınca ödenmemiş
+                                aylar güncellenir (ödenen aylara dokunulmaz). 0 = henüz belli değil.
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {editablePrimYears(
+                                settings.company_start_year,
+                                defaultThrough().year
+                            ).map((y) => (
+                                <label key={y} className="space-y-1 text-sm">
+                                    <span className="text-xs text-muted-foreground">{y}</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min={0}
+                                        value={settings.yearly_prims[String(y)] ?? 0}
+                                        onChange={(e) => {
+                                            const n = parseFloat(e.target.value);
+                                            setSettings((s) => ({
+                                                ...s,
+                                                yearly_prims: {
+                                                    ...s.yearly_prims,
+                                                    [String(y)]: Number.isFinite(n) ? n : 0
+                                                }
+                                            }));
+                                        }}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                    />
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
                         <button
                             type="button"
@@ -541,6 +630,7 @@ function mapSettings(row: Record<string, unknown>): BagkurSettings {
         sgk_principal_ref: Number(row.sgk_principal_ref) || 182304.32,
         sgk_penalty_ref: Number(row.sgk_penalty_ref) || 78392.89,
         sgk_total_ref: Number(row.sgk_total_ref) || 284313.69,
+        yearly_prims: mergeYearlyPrims(row.yearly_prims),
         note: String(row.note ?? '')
     };
 }

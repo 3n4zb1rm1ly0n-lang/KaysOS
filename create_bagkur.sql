@@ -16,6 +16,13 @@ create table if not exists company_finance_bagkur_settings (
   sgk_principal_ref numeric not null default 182304.32,
   sgk_penalty_ref numeric not null default 78392.89,
   sgk_total_ref numeric not null default 284313.69,
+  -- Yıllık indirimsiz taban prim (manuel düzenlenebilir; 2027+ için 0 → sonra girilir)
+  yearly_prims jsonb not null default '{
+    "2024": 6900.86,
+    "2025": 9036.91,
+    "2026": 11808.23,
+    "2027": 0
+  }'::jsonb,
   note text not null default ''
 );
 
@@ -71,9 +78,10 @@ create policy "Enable access to all users" on company_finance_bagkur_months
 -- Varsayılan ayar satırı
 insert into company_finance_bagkur_settings (
   company_start_year, company_start_month, penalty_ratio,
-  sgk_principal_ref, sgk_penalty_ref, sgk_total_ref
+  sgk_principal_ref, sgk_penalty_ref, sgk_total_ref, yearly_prims
 )
-select 2024, 12, 0.430012, 182304.32, 78392.89, 284313.69
+select 2024, 12, 0.430012, 182304.32, 78392.89, 284313.69,
+  '{"2024": 6900.86, "2025": 9036.91, "2026": 11808.23, "2027": 0}'::jsonb
 where not exists (select 1 from company_finance_bagkur_settings limit 1);
 
 notify pgrst, 'reload config';

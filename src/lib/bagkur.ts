@@ -41,6 +41,8 @@ export type BagkurMonthRow = {
     id?: string;
 };
 
+export type YearlyPrims = Record<string, number>;
+
 export type BagkurSettings = {
     id?: string;
     company_start_year: number;
@@ -49,19 +51,56 @@ export type BagkurSettings = {
     sgk_principal_ref: number;
     sgk_penalty_ref: number;
     sgk_total_ref: number;
+    yearly_prims: YearlyPrims;
     note: string;
+};
+
+/** Bilinen yıllar — 2027+ ayardan girilir */
+export const DEFAULT_YEARLY_PRIMS: YearlyPrims = {
+    '2024': 6900.86,
+    '2025': 9036.91,
+    '2026': 11808.23,
+    '2027': 0
 };
 
 /**
  * Dönem bazlı indirimsiz taban prim (4/b).
- * 2024: %34,50 × 20.002,50 = 6.900,86
- * 2025: %34,75 × 26.005,50 = 9.036,91
- * 2026+: %35,75 × 33.030,00 = 11.808,23
+ * Ayarlardaki yearly_prims öncelikli; yoksa varsayılan tablo.
  */
-export function defaultPrimFor(year: number, _month: number): number {
-    if (year <= 2024) return 6900.86;
-    if (year === 2025) return 9036.91;
-    return 11808.23;
+export function defaultPrimFor(
+    year: number,
+    _month?: number,
+    yearlyPrims?: YearlyPrims | null
+): number {
+    const key = String(year);
+    if (yearlyPrims && key in yearlyPrims) {
+        const v = Number(yearlyPrims[key]);
+        if (Number.isFinite(v) && v >= 0) return v;
+    }
+    if (year <= 2024) return DEFAULT_YEARLY_PRIMS['2024'];
+    if (year === 2025) return DEFAULT_YEARLY_PRIMS['2025'];
+    if (year === 2026) return DEFAULT_YEARLY_PRIMS['2026'];
+    return Number(yearlyPrims?.[key]) || 0;
+}
+
+export function mergeYearlyPrims(raw: unknown): YearlyPrims {
+    const base = { ...DEFAULT_YEARLY_PRIMS };
+    if (!raw || typeof raw !== 'object') return base;
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const n = Number(v);
+        if (/^\d{4}$/.test(k) && Number.isFinite(n) && n >= 0) base[k] = n;
+    }
+    return base;
+}
+
+/** Ayarlarda gösterilecek yıl listesi (başlangıç → through+1) */
+export function editablePrimYears(
+    startYear = BAGKUR_START.year,
+    throughYear = new Date().getFullYear() + 1
+): number[] {
+    const years: number[] = [];
+    for (let y = startYear; y <= throughYear; y++) years.push(y);
+    return years;
 }
 
 export function ymKey(year: number, month: number): string {
@@ -81,7 +120,8 @@ export function buildSchedule(
     startMonth: number,
     throughYear: number,
     throughMonth: number,
-    existing: BagkurMonthRow[] = []
+    existing: BagkurMonthRow[] = [],
+    yearlyPrims?: YearlyPrims | null
 ): BagkurMonthRow[] {
     const byKey = new Map(existing.map((r) => [ymKey(r.year, r.month), r]));
     const rows: BagkurMonthRow[] = [];
@@ -94,7 +134,7 @@ export function buildSchedule(
             prev ?? {
                 year: y,
                 month: m,
-                prim_amount: defaultPrimFor(y, m),
+                prim_amount: defaultPrimFor(y, m, yearlyPrims),
                 is_paid: false,
                 paid_at: null,
                 note: ''
@@ -282,6 +322,7 @@ export function defaultSettings(): BagkurSettings {
         sgk_principal_ref: SGK_REF.principal,
         sgk_penalty_ref: SGK_REF.penalty,
         sgk_total_ref: SGK_REF.total,
+        yearly_prims: { ...DEFAULT_YEARLY_PRIMS },
         note: ''
     };
 }

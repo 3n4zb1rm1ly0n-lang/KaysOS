@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Package } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Package, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import {
     DAILY_FIXED,
@@ -28,6 +28,15 @@ import {
 } from '@/lib/paket-prim';
 
 const TABLE = 'company_finance_paket_prim_days';
+const CLOSINGS = 'company_finance_paket_prim_closings';
+const MONTHLY = 'company_finance_monthly_entries';
+
+type MonthClosing = {
+    is_closed: boolean;
+    gross_sent: number;
+    sent_at: string | null;
+    note: string;
+};
 
 const MONTH_LABELS = [
     'Ocak',
@@ -48,6 +57,10 @@ function fmtMoney(n: number): string {
     return `₺${n.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`;
 }
 
+function fmtMoney2(n: number): string {
+    return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function todayStr(): string {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
@@ -64,33 +77,74 @@ export default function PaketPrimPage() {
     const [status, setStatus] = useState<string | null>(null);
     const [scenarioTip, setScenarioTip] = useState<BonusTip>('sanal');
     const [scenarioPkg, setScenarioPkg] = useState('38');
+    const [closing, setClosing] = useState<MonthClosing | null>(null);
+    const [sendOpen, setSendOpen] = useState(false);
+    const [sendGross, setSendGross] = useState('');
+    const [sendNote, setSendNote] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const monthNum = monthIndex + 1;
+    const monthClosed = Boolean(closing?.is_closed);
 
     const loadMonth = useCallback(async (y: number, m: number) => {
         setLoading(true);
         setError(null);
         setStatus(null);
+        setSendOpen(false);
         const { from, to } = monthDateRange(y, m);
+        const mNum = m + 1;
 
-        const { data, error: qErr } = await supabase
-            .from(TABLE)
-            .select('work_date, status, packages, tip, note')
-            .gte('work_date', from)
-            .lte('work_date', to)
-            .order('work_date');
+        const [daysRes, closeRes] = await Promise.all([
+            supabase
+                .from(TABLE)
+                .select('work_date, status, packages, tip, note')
+                .gte('work_date', from)
+                .lte('work_date', to)
+                .order('work_date'),
+            supabase
+                .from(CLOSINGS)
+                .select('is_closed, gross_sent, sent_at, note')
+                .eq('year', y)
+                .eq('month', mNum)
+                .maybeSingle()
+        ]);
 
-        if (qErr) {
+        if (daysRes.error) {
             setError(
-                qErr.message.includes('does not exist') || qErr.code === '42P01'
+                daysRes.error.message.includes('does not exist') || daysRes.error.code === '42P01'
                     ? 'Tablo bulunamadı. Supabase’te create_paket_prim_days.sql dosyasını çalıştırın.'
-                    : qErr.message
+                    : daysRes.error.message
             );
             setEntries(emptyMonthEntries(y, m));
+            setClosing(null);
             setLoading(false);
             return;
         }
 
-        let merged = mergeMonthFromRows(y, m, data ?? []);
-        const hasDb = (data ?? []).length > 0;
+        if (closeRes.error && closeRes.error.code !== 'PGRST116') {
+            if (
+                closeRes.error.message.includes('does not exist') ||
+                closeRes.error.code === '42P01'
+            ) {
+                setError(
+                    'Kapanış tablosu yok. Supabase’te create_paket_prim_closings.sql çalıştırın.'
+                );
+            }
+        }
+
+        if (closeRes.data) {
+            setClosing({
+                is_closed: Boolean(closeRes.data.is_closed),
+                gross_sent: Number(closeRes.data.gross_sent) || 0,
+                sent_at: closeRes.data.sent_at ? String(closeRes.data.sent_at) : null,
+                note: String(closeRes.data.note ?? '')
+            });
+        } else {
+            setClosing(null);
+        }
+
+        let merged = mergeMonthFromRows(y, m, daysRes.data ?? []);
+        const hasDb = (daysRes.data ?? []).length > 0;
         if (!hasDb) {
             const local = readLocalMonthEntries(y, m);
             const localFilled = local.filter((e) => e.status === 'work' || e.status === 'leave');
@@ -108,7 +162,6 @@ export default function PaketPrimPage() {
             }
         }
 
-        // Her hafta varsayılan Pazartesi izni (boş + haftada başka izin yoksa)
         const { entries: withLeave, seeded } = applyDefaultMondayLeave(merged);
         if (seeded.length > 0) {
             const payloads = seeded
@@ -176,6 +229,10 @@ export default function PaketPrimPage() {
 
     const persistEntry = useCallback(
         async (entry: PackageDayEntry) => {
+            if (monthClosed) {
+                setError('Ay kapatılmış. Düzenlemek için kilidi aç.');
+                return false;
+            }
             setSavingDate(entry.date);
             setError(null);
             setStatus(null);
@@ -224,7 +281,7 @@ export default function PaketPrimPage() {
             setSavingDate(null);
             return true;
         },
-        []
+        [monthClosed]
     );
 
     const saveWorkDay = useCallback(
@@ -241,6 +298,10 @@ export default function PaketPrimPage() {
 
     const setLeave = useCallback(
         async (date: string) => {
+            if (monthClosed) {
+                setError('Ay kapatılmış. Düzenlemek için kilidi aç.');
+                return;
+            }
             const { entries: next, cleared } = moveLeaveTo(entries, date);
             setSavingDate(date);
             setError(null);
@@ -281,7 +342,7 @@ export default function PaketPrimPage() {
             );
             setSavingDate(null);
         },
-        [entries]
+        [entries, monthClosed]
     );
 
     const clearDay = useCallback(
@@ -290,6 +351,155 @@ export default function PaketPrimPage() {
         },
         [persistEntry]
     );
+
+    const openSendModal = useCallback(() => {
+        setSendGross(String(Math.round(summary.grandTotal * 100) / 100));
+        setSendNote(
+            closing?.note ||
+                `Paket prim — ${MONTH_LABELS[monthIndex]} ${year} · ${summary.workDays} iş günü · ${summary.totalPackages} paket`
+        );
+        setSendOpen(true);
+        setError(null);
+    }, [summary, monthIndex, year, closing?.note]);
+
+    const unlockMonth = useCallback(async () => {
+        setSending(true);
+        setError(null);
+        const { error: upErr } = await supabase.from(CLOSINGS).upsert(
+            {
+                year,
+                month: monthNum,
+                is_closed: false,
+                gross_sent: closing?.gross_sent ?? 0,
+                note: closing?.note ?? ''
+            },
+            { onConflict: 'year,month' }
+        );
+        if (upErr) {
+            setError(upErr.message);
+            setSending(false);
+            return;
+        }
+        setClosing((c) =>
+            c
+                ? { ...c, is_closed: false }
+                : { is_closed: false, gross_sent: 0, sent_at: null, note: '' }
+        );
+        setStatus('Kilit açıldı. Günleri düzenleyebilirsin; bitince tekrar gönder.');
+        setSending(false);
+    }, [year, monthNum, closing]);
+
+    const confirmSendToMonthly = useCallback(async () => {
+        setSending(true);
+        setError(null);
+        const gross = parseFloat(sendGross.replace(',', '.'));
+        if (!Number.isFinite(gross) || gross < 0) {
+            setError('Geçerli bir brüt tutar gir.');
+            setSending(false);
+            return;
+        }
+
+        const note =
+            sendNote.trim() ||
+            `Paket prim — ${MONTH_LABELS[monthIndex]} ${year}`;
+
+        // Mevcut aylık kayıt?
+        const { data: existing, error: exErr } = await supabase
+            .from(MONTHLY)
+            .select('id, gross_amount')
+            .eq('year', year)
+            .eq('month', monthNum)
+            .maybeSingle();
+
+        if (exErr) {
+            setError(exErr.message);
+            setSending(false);
+            return;
+        }
+
+        if (existing && Number(existing.gross_amount) > 0 && !monthClosed) {
+            const ok = window.confirm(
+                `Bu ay için aylık kazançta zaten brüt ${fmtMoney2(Number(existing.gross_amount))} var. Üzerine yazılsın mı?`
+            );
+            if (!ok) {
+                setSending(false);
+                return;
+            }
+        }
+
+        if (existing?.id) {
+            const { error: upM } = await supabase
+                .from(MONTHLY)
+                .update({ gross_amount: gross, note })
+                .eq('id', existing.id);
+            if (upM) {
+                setError(upM.message);
+                setSending(false);
+                return;
+            }
+        } else {
+            const { error: insM } = await supabase.from(MONTHLY).insert({
+                year,
+                month: monthNum,
+                gross_amount: gross,
+                kdv_paid: 0,
+                kdv_deductible: 0,
+                note
+            });
+            if (insM) {
+                setError(insM.message);
+                setSending(false);
+                return;
+            }
+        }
+
+        const { error: closeErr } = await supabase.from(CLOSINGS).upsert(
+            {
+                year,
+                month: monthNum,
+                is_closed: true,
+                gross_sent: gross,
+                fixed_pay: summary.fixedPay,
+                daily_prim_total: summary.dailyPrimTotal,
+                monthly_bonus: summary.monthlyBonusAmount,
+                total_packages: summary.totalPackages,
+                work_days: summary.workDays,
+                sent_at: new Date().toISOString(),
+                note
+            },
+            { onConflict: 'year,month' }
+        );
+
+        if (closeErr) {
+            setError(
+                closeErr.message.includes('does not exist') || closeErr.code === '42P01'
+                    ? 'Kapanış tablosu yok. create_paket_prim_closings.sql çalıştırın. Brüt aylık kazanca yazılmış olabilir.'
+                    : closeErr.message
+            );
+            setSending(false);
+            return;
+        }
+
+        setClosing({
+            is_closed: true,
+            gross_sent: gross,
+            sent_at: new Date().toISOString(),
+            note
+        });
+        setSendOpen(false);
+        setStatus(
+            `${MONTH_LABELS[monthIndex]} ${year} aylık kazanca gönderildi: ${fmtMoney2(gross)} (brüt).`
+        );
+        setSending(false);
+    }, [
+        sendGross,
+        sendNote,
+        year,
+        monthNum,
+        monthIndex,
+        monthClosed,
+        summary
+    ]);
 
     const scenarioWorkDays =
         summary.workDays > 0 ? summary.workDays : FULL_MONTH_WORK_DAYS;
@@ -314,28 +524,139 @@ export default function PaketPrimPage() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => shiftMonth(-1)}
-                        className="p-2 rounded-lg border border-border hover:bg-secondary/50"
-                        aria-label="Önceki ay"
-                    >
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <div className="min-w-[140px] text-center font-medium">
-                        {MONTH_LABELS[monthIndex]} {year}
+                <div className="flex flex-col items-stretch sm:items-end gap-2">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => shiftMonth(-1)}
+                            className="p-2 rounded-lg border border-border hover:bg-secondary/50"
+                            aria-label="Önceki ay"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <div className="min-w-[140px] text-center font-medium">
+                            {MONTH_LABELS[monthIndex]} {year}
+                            {monthClosed && (
+                                <div className="text-[11px] text-amber-600 dark:text-amber-400 font-normal">
+                                    Kapatıldı
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => shiftMonth(1)}
+                            className="p-2 rounded-lg border border-border hover:bg-secondary/50"
+                            aria-label="Sonraki ay"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => shiftMonth(1)}
-                        className="p-2 rounded-lg border border-border hover:bg-secondary/50"
-                        aria-label="Sonraki ay"
-                    >
-                        <ChevronRight className="w-5 h-5" />
-                    </button>
+                    <div className="flex flex-wrap gap-2 justify-end">
+                        {monthClosed ? (
+                            <button
+                                type="button"
+                                disabled={sending}
+                                onClick={() => void unlockMonth()}
+                                className="px-3 py-2 text-xs rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
+                            >
+                                Kilidi aç
+                            </button>
+                        ) : null}
+                        <button
+                            type="button"
+                            disabled={loading || summary.workDays === 0}
+                            onClick={openSendModal}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        >
+                            <Send className="w-4 h-4" />
+                            {monthClosed ? 'Tekrar gönder' : 'Aylık kazanca gönder'}
+                        </button>
+                    </div>
                 </div>
             </header>
+
+            {monthClosed && closing && (
+                <p className="text-sm text-muted-foreground">
+                    Bu ay kapatıldı · Brüt {fmtMoney2(closing.gross_sent)}
+                    {closing.sent_at
+                        ? ` · ${new Date(closing.sent_at).toLocaleString('tr-TR')}`
+                        : ''}
+                </p>
+            )}
+
+            {sendOpen && (
+                <section className="rounded-xl border border-primary/30 bg-primary/5 p-4 md:p-5 space-y-4">
+                    <h2 className="text-sm font-semibold">
+                        {MONTH_LABELS[monthIndex]} {year} → Aylık kazanç (brüt)
+                    </h2>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div>
+                            <div className="text-xs text-muted-foreground">Sabit</div>
+                            <div className="font-medium tabular-nums">{fmtMoney2(summary.fixedPay)}</div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground">Günlük prim</div>
+                            <div className="font-medium tabular-nums">
+                                {fmtMoney2(summary.dailyPrimTotal)}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground">Aylık bonus</div>
+                            <div className="font-medium tabular-nums">
+                                {fmtMoney2(summary.monthlyBonusAmount)}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground">Hesaplanan toplam</div>
+                            <div className="font-semibold tabular-nums text-primary">
+                                {fmtMoney2(summary.grandTotal)}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3 items-end">
+                        <label className="space-y-1">
+                            <span className="text-xs text-muted-foreground">
+                                Brüt (manuel düzeltilebilir)
+                            </span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={sendGross}
+                                onChange={(e) => setSendGross(e.target.value)}
+                                className="block w-44 rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                        </label>
+                        <label className="space-y-1 flex-1 min-w-[200px]">
+                            <span className="text-xs text-muted-foreground">Not</span>
+                            <input
+                                type="text"
+                                value={sendNote}
+                                onChange={(e) => setSendNote(e.target.value)}
+                                className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                        </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            disabled={sending}
+                            onClick={() => void confirmSendToMonthly()}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        >
+                            {sending && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Onayla ve gönder
+                        </button>
+                        <button
+                            type="button"
+                            disabled={sending}
+                            onClick={() => setSendOpen(false)}
+                            className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-secondary/50"
+                        >
+                            Vazgeç
+                        </button>
+                    </div>
+                </section>
+            )}
 
             {error && (
                 <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
@@ -563,6 +884,7 @@ export default function PaketPrimPage() {
                                 isToday={entry.date === today}
                                 leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
+                                locked={monthClosed}
                                 onSaveWork={saveWorkDay}
                                 onLeave={() => void setLeave(entry.date)}
                                 onClear={() => void clearDay(entry.date)}
@@ -701,6 +1023,7 @@ function DayRow({
     isToday,
     leaveAllowed,
     saving,
+    locked,
     onSaveWork,
     onLeave,
     onClear
@@ -709,6 +1032,7 @@ function DayRow({
     isToday: boolean;
     leaveAllowed: boolean;
     saving: boolean;
+    locked: boolean;
     onSaveWork: (date: string, packages: number, tip: BonusTip) => void;
     onLeave: () => void;
     onClear: () => void;
@@ -726,12 +1050,13 @@ function DayRow({
     const pkgNum = Math.max(0, parseInt(pkg, 10) || 0);
     const prim = isWork ? dailyPrim(entry.packages, entry.tip) : dailyPrim(pkgNum, tip);
     const next = nextDailyThreshold(isWork ? entry.packages : pkgNum, isWork ? entry.tip : tip);
+    const disabled = saving || locked;
 
     return (
         <div
             className={`px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:gap-4 ${
                 isToday ? 'bg-primary/5' : ''
-            } ${isLeave ? 'opacity-70' : ''}`}
+            } ${isLeave || locked ? 'opacity-70' : ''}`}
         >
             <div className="md:w-44 shrink-0">
                 <div className={`text-sm font-medium ${isToday ? 'text-primary' : ''}`}>
@@ -754,7 +1079,7 @@ function DayRow({
                     </span>
                     <button
                         type="button"
-                        disabled={saving}
+                        disabled={disabled}
                         onClick={onClear}
                         className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
                     >
@@ -773,7 +1098,7 @@ function DayRow({
                                 value={pkg}
                                 onChange={(e) => setPkg(e.target.value)}
                                 placeholder="0"
-                                disabled={saving}
+                                disabled={disabled}
                                 className="block w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                             />
                         </label>
@@ -783,27 +1108,27 @@ function DayRow({
                         </div>
                         <button
                             type="button"
-                            disabled={saving}
+                            disabled={disabled}
                             onClick={() => onSaveWork(entry.date, pkgNum, tip)}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                         >
                             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                             Kaydet
                         </button>
-                        {leaveAllowed && (
+                        {leaveAllowed && !locked && (
                             <button
                                 type="button"
-                                disabled={saving}
+                                disabled={disabled}
                                 onClick={onLeave}
                                 className="px-3 py-2 text-xs rounded-lg border border-border text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
                             >
                                 İzin
                             </button>
                         )}
-                        {isWork && (
+                        {isWork && !locked && (
                             <button
                                 type="button"
-                                disabled={saving}
+                                disabled={disabled}
                                 onClick={onClear}
                                 className="px-3 py-2 text-xs rounded-lg border border-border text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
                             >

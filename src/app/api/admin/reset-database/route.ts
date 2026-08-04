@@ -6,6 +6,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase-server';
 const TABLES = [
     'contact_messages',
     'company_finance_paket_prim_days',
+    'company_finance_paket_prim_closings',
     'company_finance_bagkur_months',
     'company_finance_bagkur_settings',
     'company_finance_monthly_expenses',

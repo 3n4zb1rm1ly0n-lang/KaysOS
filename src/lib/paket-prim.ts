@@ -218,23 +218,80 @@ export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
     };
 }
 
-/** Hedef senaryo: her iş günü aynı paket + tip ile */
+/** Ayda planlanan iş günü: izin dışındaki tüm günler (boş + çalışılan) */
+export function plannedWorkDaysInMonth(entries: PackageDayEntry[]): number {
+    let n = 0;
+    for (const e of entries) {
+        if (e.status === 'leave') continue;
+        n += 1;
+    }
+    return n;
+}
+
+export type ScenarioMode = 'daily' | 'monthly';
+
+export type ScenarioResult = {
+    fixedPay: number;
+    dailyPrimTotal: number;
+    monthlyBonusAmount: number;
+    grandTotal: number;
+    totalPackages: number;
+    /** Prim tablosuna giren günlük paket (aylık modda yuvarlanmış ortalama) */
+    packagesPerDay: number;
+    dayPrimAmount: number;
+    workDays: number;
+};
+
+/**
+ * Hedef simülatörü.
+ * daily: paket/gün × iş günü
+ * monthly: aylık paket / iş günü → round → günlük prim basamağı; bonus aylık toplamdan
+ */
 export function projectScenario(
-    workDayCount: number,
-    packagesPerDay: number,
-    tip: BonusTip
-): { fixedPay: number; dailyPrimTotal: number; monthlyBonusAmount: number; grandTotal: number; totalPackages: number } {
-    const fixedPay = workDayCount * DAILY_FIXED;
-    const dayPrim = dailyPrim(packagesPerDay, tip);
-    const dailyPrimTotal = dayPrim * workDayCount;
-    const totalPackages = packagesPerDay * workDayCount;
+    mode: ScenarioMode,
+    packageInput: number,
+    tip: BonusTip,
+    workDays: number
+): ScenarioResult {
+    const days = Math.max(0, Math.floor(workDays));
+    const input = Math.max(0, packageInput);
+    if (days <= 0 || input <= 0) {
+        return {
+            fixedPay: 0,
+            dailyPrimTotal: 0,
+            monthlyBonusAmount: 0,
+            grandTotal: 0,
+            totalPackages: 0,
+            packagesPerDay: 0,
+            dayPrimAmount: 0,
+            workDays: days
+        };
+    }
+
+    let packagesPerDay: number;
+    let totalPackages: number;
+    if (mode === 'daily') {
+        packagesPerDay = Math.floor(input);
+        totalPackages = packagesPerDay * days;
+    } else {
+        totalPackages = Math.floor(input);
+        packagesPerDay = Math.round(totalPackages / days);
+    }
+
+    const fixedPay = days * DAILY_FIXED;
+    const dayPrimAmount = dailyPrim(packagesPerDay, tip);
+    const dailyPrimTotal = dayPrimAmount * days;
     const monthlyBonusAmount = monthlyBonus(totalPackages);
+
     return {
         fixedPay,
         dailyPrimTotal,
         monthlyBonusAmount,
         grandTotal: fixedPay + dailyPrimTotal + monthlyBonusAmount,
-        totalPackages
+        totalPackages,
+        packagesPerDay,
+        dayPrimAmount,
+        workDays: days
     };
 }
 

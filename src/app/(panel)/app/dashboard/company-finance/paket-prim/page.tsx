@@ -20,11 +20,13 @@ import {
     moveLeaveTo,
     nextDailyThreshold,
     paceProjection,
+    plannedWorkDaysInMonth,
     projectScenario,
     readLocalMonthEntries,
     remainingWorkDaySlots,
     summarizeMonth,
-    toDbPayload
+    toDbPayload,
+    type ScenarioMode
 } from '@/lib/paket-prim';
 
 const TABLE = 'company_finance_paket_prim_days';
@@ -77,6 +79,8 @@ export default function PaketPrimPage() {
     const [status, setStatus] = useState<string | null>(null);
     const [scenarioTip, setScenarioTip] = useState<BonusTip>('sanal');
     const [scenarioPkg, setScenarioPkg] = useState('38');
+    const [scenarioMode, setScenarioMode] = useState<ScenarioMode>('daily');
+    const [scenarioDaysInput, setScenarioDaysInput] = useState('');
     const [closing, setClosing] = useState<MonthClosing | null>(null);
     const [sendOpen, setSendOpen] = useState(false);
     const [sendGross, setSendGross] = useState('');
@@ -91,6 +95,7 @@ export default function PaketPrimPage() {
         setError(null);
         setStatus(null);
         setSendOpen(false);
+        setScenarioDaysInput('');
         const { from, to } = monthDateRange(y, m);
         const mNum = m + 1;
 
@@ -501,10 +506,19 @@ export default function PaketPrimPage() {
         summary
     ]);
 
-    const scenarioWorkDays =
-        summary.workDays > 0 ? summary.workDays : FULL_MONTH_WORK_DAYS;
-    const pkgNum = Math.max(0, parseInt(scenarioPkg, 10) || 0);
-    const scenario = projectScenario(scenarioWorkDays, pkgNum, scenarioTip);
+    const autoWorkDays = useMemo(() => {
+        const planned = plannedWorkDaysInMonth(entries);
+        return planned > 0 ? planned : FULL_MONTH_WORK_DAYS;
+    }, [entries]);
+
+    const scenarioWorkDays = useMemo(() => {
+        const manual = parseInt(scenarioDaysInput, 10);
+        if (scenarioDaysInput.trim() && Number.isFinite(manual) && manual > 0) return manual;
+        return autoWorkDays;
+    }, [scenarioDaysInput, autoWorkDays]);
+
+    const pkgNum = Math.max(0, parseFloat(scenarioPkg.replace(',', '.')) || 0);
+    const scenario = projectScenario(scenarioMode, pkgNum, scenarioTip, scenarioWorkDays);
     const today = todayStr();
 
     return (
@@ -898,13 +912,47 @@ export default function PaketPrimPage() {
                 <div>
                     <h2 className="text-sm font-semibold">Hedef simülatörü</h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                        {scenarioWorkDays} iş günü varsayımı
-                        {summary.workDays === 0 ? ' (tam ay: 26 gün)' : ' (girilmiş iş günü sayısı)'}.
+                        İzinler düşülmüş tam ay · seçili prim tablosu (
+                        {scenarioTip === 'sanal' ? 'Sanal' : 'Hemen'}). Aylık modda günlük
+                        paket = yuvarlanmış ortalama.
                     </p>
                 </div>
+
                 <div className="flex flex-wrap gap-3 items-end">
+                    <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">Giriş tipi</span>
+                        <div className="inline-flex rounded-lg border border-border p-0.5 bg-secondary/20">
+                            {(
+                                [
+                                    ['daily', 'Günlük paket'],
+                                    ['monthly', 'Aylık paket']
+                                ] as const
+                            ).map(([id, label]) => (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => setScenarioMode(id)}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                        scenarioMode === id
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">Bonus tipi</span>
+                        <TipToggle value={scenarioTip} onChange={setScenarioTip} />
+                    </div>
+
                     <label className="space-y-1">
-                        <span className="text-xs text-muted-foreground">Paket / gün</span>
+                        <span className="text-xs text-muted-foreground">
+                            {scenarioMode === 'daily' ? 'Paket / gün' : 'Paket / ay'}
+                        </span>
                         <input
                             type="number"
                             min={0}
@@ -913,34 +961,72 @@ export default function PaketPrimPage() {
                             className="block w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
                         />
                     </label>
-                    <div className="space-y-1">
-                        <span className="text-xs text-muted-foreground">Bonus tipi</span>
-                        <TipToggle value={scenarioTip} onChange={setScenarioTip} />
-                    </div>
-                    <div className="flex gap-2">
-                        {[38, 43].map((n) => (
-                            <button
-                                key={n}
-                                type="button"
-                                onClick={() => {
-                                    setScenarioPkg(String(n));
-                                    setScenarioTip('sanal');
-                                }}
-                                className="px-3 py-2 text-xs rounded-lg border border-border hover:bg-secondary/50"
-                            >
-                                {n} pkt (Sanal)
-                            </button>
-                        ))}
-                    </div>
+
+                    <label className="space-y-1">
+                        <span className="text-xs text-muted-foreground">
+                            İş günü (otomatik {autoWorkDays})
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            placeholder={String(autoWorkDays)}
+                            value={scenarioDaysInput}
+                            onChange={(e) => setScenarioDaysInput(e.target.value)}
+                            className="block w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                    </label>
+
+                    {scenarioMode === 'daily' && (
+                        <div className="flex gap-2">
+                            {[38, 43].map((n) => (
+                                <button
+                                    key={n}
+                                    type="button"
+                                    onClick={() => {
+                                        setScenarioPkg(String(n));
+                                        setScenarioTip('sanal');
+                                        setScenarioMode('daily');
+                                    }}
+                                    className="px-3 py-2 text-xs rounded-lg border border-border hover:bg-secondary/50"
+                                >
+                                    {n} pkt (Sanal)
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
+
+                <p className="text-xs text-muted-foreground">
+                    {scenario.workDays} iş günü · günlük eşdeğer{' '}
+                    <span className="text-foreground font-medium tabular-nums">
+                        {scenario.packagesPerDay} pkt
+                    </span>{' '}
+                    → prim {fmtMoney(scenario.dayPrimAmount)}/gün
+                    {scenarioMode === 'monthly' && scenario.workDays > 0 && (
+                        <>
+                            {' '}
+                            (aylık {scenario.totalPackages} ÷ {scenario.workDays} ≈{' '}
+                            {(scenario.totalPackages / scenario.workDays).toFixed(1)})
+                        </>
+                    )}
+                    {scenarioMode === 'daily' && (
+                        <>
+                            {' '}
+                            · ay toplamı {scenario.totalPackages} paket
+                        </>
+                    )}
+                </p>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <div>
                         <div className="text-xs text-muted-foreground">Sabit</div>
                         <div className="font-medium tabular-nums">{fmtMoney(scenario.fixedPay)}</div>
                     </div>
                     <div>
-                        <div className="text-xs text-muted-foreground">Günlük prim</div>
-                        <div className="font-medium tabular-nums">{fmtMoney(scenario.dailyPrimTotal)}</div>
+                        <div className="text-xs text-muted-foreground">Günlük primler</div>
+                        <div className="font-medium tabular-nums">
+                            {fmtMoney(scenario.dailyPrimTotal)}
+                        </div>
                     </div>
                     <div>
                         <div className="text-xs text-muted-foreground">Aylık bonus</div>

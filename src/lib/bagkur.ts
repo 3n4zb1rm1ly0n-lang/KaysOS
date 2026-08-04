@@ -95,8 +95,8 @@ export function mergeYearlyPrims(raw: unknown): YearlyPrims {
 
 /** Ayarlarda gösterilecek yıl listesi (başlangıç → through+1) */
 export function editablePrimYears(
-    startYear = BAGKUR_START.year,
-    throughYear = new Date().getFullYear() + 1
+    startYear: number = BAGKUR_START.year,
+    throughYear: number = new Date().getFullYear() + 1
 ): number[] {
     const years: number[] = [];
     for (let y = startYear; y <= throughYear; y++) years.push(y);

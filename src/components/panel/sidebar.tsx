@@ -17,7 +17,8 @@ import {
     ChevronRight,
     Wallet,
     Mail,
-    Package
+    Package,
+    Shield
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -49,6 +50,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Paket prim',
         href: '/app/dashboard/company-finance/paket-prim',
         icon: Package
+    },
+    {
+        id: 'cf-bagkur',
+        label: 'Bağkur',
+        href: '/app/dashboard/company-finance/bagkur',
+        icon: Shield
     }
 ];
 

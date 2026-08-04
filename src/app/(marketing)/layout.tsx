@@ -8,7 +8,14 @@ export const metadata: Metadata = {
         template: '%s · Kaysia'
     },
     description:
-        'Kaysia; web ürünleri, paneller ve dijital sistemler tasarlayan bir ajans stüdyosudur.'
+        'Kaysia; web ürünleri, paneller ve dijital sistemler tasarlayan bir ajans stüdyosudur.',
+    applicationName: 'Kaysia',
+    manifest: '/manifest.webmanifest',
+    appleWebApp: {
+        capable: true,
+        statusBarStyle: 'black-translucent',
+        title: 'Kaysia'
+    }
 };
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {

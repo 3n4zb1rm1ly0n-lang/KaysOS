@@ -1,12 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Sidebar } from '@/components/panel/sidebar';
-import { MobileNav } from '@/components/panel/mobile-nav';
 
+/** Login, App PWA ile aynı manifest — kurulum / yönlendirme tutarlı olsun. */
 export const metadata: Metadata = {
-    title: {
-        default: 'Kaysia App',
-        template: '%s · Kaysia App'
-    },
+    title: 'Giriş · Kaysia App',
     applicationName: 'Kaysia App',
     manifest: '/manifest-app.webmanifest',
     appleWebApp: {
@@ -32,18 +28,6 @@ export const viewport: Viewport = {
     viewportFit: 'cover'
 };
 
-export default function PanelLayout({
-    children
-}: {
-    children: React.ReactNode;
-}) {
-    return (
-        <div className="flex min-h-screen bg-[#0B0F14] text-[#E5E7EB] font-sans flex-col md:flex-row">
-            <Sidebar />
-            <MobileNav />
-            <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 overflow-y-auto text-foreground bg-background">
-                {children}
-            </main>
-        </div>
-    );
+export default function LoginLayout({ children }: { children: React.ReactNode }) {
+    return children;
 }

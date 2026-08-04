@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <!-- Kaysia App PWA  panel bg + teal dolu hücre -->
+  <rect width="512" height="512" fill="#0B0F14"/>
+  <!-- D1_ kare + 1zgara -->
+  <rect x="96" y="96" width="320" height="320" stroke="#E8EAED" stroke-width="18" fill="none"/>
+  <line x1="256" y1="96" x2="256" y2="416" stroke="#E8EAED" stroke-width="18"/>
+  <line x1="96" y1="256" x2="416" y2="256" stroke="#E8EAED" stroke-width="18"/>
+  <!-- Sa alt  App vurgusu (primary teal) -->
+  <rect x="265" y="265" width="142" height="142" fill="#1A9B8E"/>
+</svg>

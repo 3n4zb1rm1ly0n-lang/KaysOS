@@ -24,8 +24,8 @@ export const FULL_MONTH_WORK_DAYS = 26;
 /** Şirket rakamı (1 TL yuvarlama); hesapta günlük sabit kullanılır */
 export const COMPANY_FIXED_MONTHLY = 55_223;
 
-/** Sanal market günlük prim (2–3. bölge) */
-export const SANAL_DAILY_BRACKETS: PrimBracket[] = [
+/** Migros Hemen günlük prim (daha düşük basamaklar) */
+export const HEMEN_DAILY_BRACKETS: PrimBracket[] = [
     { min: 20, max: 23, amount: 255 },
     { min: 24, max: 27, amount: 505 },
     { min: 28, max: 33, amount: 770 },
@@ -40,8 +40,8 @@ export const SANAL_DAILY_BRACKETS: PrimBracket[] = [
     { min: 76, max: null, amount: 4830 }
 ];
 
-/** Migros Hemen günlük prim */
-export const HEMEN_DAILY_BRACKETS: PrimBracket[] = [
+/** Sanal market günlük prim (daha kazançlı sistem) */
+export const SANAL_DAILY_BRACKETS: PrimBracket[] = [
     { min: 16, max: 19, amount: 200 },
     { min: 20, max: 23, amount: 510 },
     { min: 24, max: 27, amount: 760 },
@@ -122,7 +122,7 @@ export function bracketFor(packages: number, brackets: PrimBracket[]): PrimBrack
 
 export function dailyPrim(packages: number, tip: BonusTip | null): number {
     if (!tip || packages <= 0) return 0;
-    const brackets = tip === 'hemen' ? HEMEN_DAILY_BRACKETS : SANAL_DAILY_BRACKETS;
+    const brackets = tip === 'sanal' ? SANAL_DAILY_BRACKETS : HEMEN_DAILY_BRACKETS;
     return bracketFor(packages, brackets)?.amount ?? 0;
 }
 
@@ -131,7 +131,7 @@ export function nextDailyThreshold(
     tip: BonusTip | null
 ): { remaining: number; nextAmount: number; nextMin: number } | null {
     if (!tip) return null;
-    const brackets = tip === 'hemen' ? HEMEN_DAILY_BRACKETS : SANAL_DAILY_BRACKETS;
+    const brackets = tip === 'sanal' ? SANAL_DAILY_BRACKETS : HEMEN_DAILY_BRACKETS;
     const current = bracketFor(packages, brackets);
     if (!current) {
         const first = brackets[0];

@@ -61,7 +61,7 @@ export default function PaketPrimPage() {
     const [savingDate, setSavingDate] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
-    const [scenarioTip, setScenarioTip] = useState<BonusTip>('hemen');
+    const [scenarioTip, setScenarioTip] = useState<BonusTip>('sanal');
     const [scenarioPkg, setScenarioPkg] = useState('38');
 
     const loadMonth = useCallback(async (y: number, m: number) => {
@@ -550,11 +550,11 @@ export default function PaketPrimPage() {
                                 type="button"
                                 onClick={() => {
                                     setScenarioPkg(String(n));
-                                    setScenarioTip('hemen');
+                                    setScenarioTip('sanal');
                                 }}
                                 className="px-3 py-2 text-xs rounded-lg border border-border hover:bg-secondary/50"
                             >
-                                {n} pkt (Hemen)
+                                {n} pkt (Sanal)
                             </button>
                         ))}
                     </div>
@@ -623,8 +623,8 @@ function TipToggle({
         <div className="inline-flex rounded-lg border border-border p-0.5 bg-secondary/20">
             {(
                 [
-                    ['hemen', 'Hemen'],
-                    ['sanal', 'Sanal']
+                    ['sanal', 'Sanal'],
+                    ['hemen', 'Hemen']
                 ] as const
             ).map(([id, label]) => (
                 <button
@@ -662,11 +662,11 @@ function DayRow({
     onClear: () => void;
 }) {
     const [pkg, setPkg] = useState(entry.packages ? String(entry.packages) : '');
-    const [tip, setTip] = useState<BonusTip>(entry.tip ?? 'hemen');
+    const [tip, setTip] = useState<BonusTip>(entry.tip ?? 'sanal');
 
     useEffect(() => {
         setPkg(entry.packages ? String(entry.packages) : '');
-        setTip(entry.tip ?? 'hemen');
+        setTip(entry.tip ?? 'sanal');
     }, [entry.date, entry.packages, entry.tip, entry.status]);
 
     const isLeave = entry.status === 'leave';

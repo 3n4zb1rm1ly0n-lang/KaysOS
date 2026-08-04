@@ -1,6 +1,14 @@
 /* Kaysia PWA — temel offline / shell cache */
-const CACHE = 'kaysia-v1';
-const PRECACHE = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'kaysia-v3';
+const PRECACHE = [
+  '/',
+  '/manifest.webmanifest',
+  '/manifest-app.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-app-192.png',
+  '/icons/icon-app-512.png'
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

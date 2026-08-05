@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Sidebar } from '@/components/panel/sidebar';
 import { MobileNav } from '@/components/panel/mobile-nav';
+import { FloatingIdeaChat } from '@/components/panel/floating-idea-chat';
 
 export const metadata: Metadata = {
     title: {
@@ -44,6 +45,7 @@ export default function PanelLayout({
             <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 overflow-y-auto text-foreground bg-background">
                 {children}
             </main>
+            <FloatingIdeaChat />
         </div>
     );
 }

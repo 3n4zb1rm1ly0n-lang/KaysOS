@@ -8,11 +8,19 @@ export function useUnreadContactCount(pollMs = 30_000) {
     const [count, setCount] = useState(0);
 
     const refresh = useCallback(async () => {
-        const { count: c, error } = await supabase
-            .from('contact_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_read', false);
-        if (!error && typeof c === 'number') setCount(c);
+        const [cRes, iRes] = await Promise.all([
+            supabase
+                .from('contact_messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('is_read', false),
+            supabase
+                .from('idea_notes')
+                .select('*', { count: 'exact', head: true })
+                .eq('is_read', false)
+        ]);
+        const c = !cRes.error && typeof cRes.count === 'number' ? cRes.count : 0;
+        const i = !iRes.error && typeof iRes.count === 'number' ? iRes.count : 0;
+        setCount(c + i);
     }, []);
 
     useEffect(() => {

@@ -18,7 +18,8 @@ import {
     Wallet,
     Mail,
     Package,
-    Shield
+    Shield,
+    Fuel
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -56,6 +57,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Bağkur',
         href: '/app/dashboard/company-finance/bagkur',
         icon: Shield
+    },
+    {
+        id: 'cf-fuel',
+        label: 'Benzin',
+        href: '/app/dashboard/company-finance/fuel',
+        icon: Fuel
     }
 ];
 

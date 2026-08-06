@@ -1,4 +1,4 @@
-/** Vergi borcu taksitlendirme — borç + aylık satırlar */
+/** Vergi borcu taksitlendirme — borç + aylık satırlar + vadesi geçmiş toplu borçlar */
 
 const MONTH_LABELS = [
     'Ocak',
@@ -14,6 +14,10 @@ const MONTH_LABELS = [
     'Kasım',
     'Aralık'
 ] as const;
+
+export const DEFAULT_DUE_DAY = 30;
+/** İlk taksit ayı (Eylül) */
+export const DEFAULT_START_MONTH = 9;
 
 export function monthLabel(month: number): string {
     return MONTH_LABELS[month - 1] ?? String(month);
@@ -34,6 +38,7 @@ export type TaxDebt = {
     installment_count: number;
     start_year: number;
     start_month: number;
+    due_day: number;
     sort_order: number;
     note: string;
 };
@@ -50,6 +55,17 @@ export type TaxInstallmentRow = {
     note: string;
 };
 
+/** Planı olmayan, vadesi geçmiş tek seferlik borçlar */
+export type TaxLumpDebt = {
+    id: string;
+    name: string;
+    amount: number;
+    is_paid: boolean;
+    paid_at: string | null;
+    note: string;
+    sort_order: number;
+};
+
 export type SeedDebtSpec = {
     name: string;
     installment_count: number;
@@ -57,19 +73,71 @@ export type SeedDebtSpec = {
     total_amount?: number;
     start_year?: number;
     start_month?: number;
+    due_day?: number;
     note?: string;
 };
 
-/** 3×12 + 1×18 varsayılan borçlar */
+export function defaultStartYear(now = new Date()): number {
+    // Eylül henüz gelmediyse bu yıl; Eylül sonrası da bu yılın planı (Eylül başlangıç)
+    return now.getFullYear();
+}
+
+/** 3×12 + 1×18 — ilk taksit Eylül, vade günü 30 */
 export function defaultSeedDebts(now = new Date()): SeedDebtSpec[] {
-    const y = now.getFullYear();
-    const m = now.getMonth() + 1;
+    const y = defaultStartYear(now);
     return [
-        { name: 'Borç 1', installment_count: 12, sort_order: 1, total_amount: 0, start_year: y, start_month: m },
-        { name: 'Borç 2', installment_count: 12, sort_order: 2, total_amount: 0, start_year: y, start_month: m },
-        { name: 'Borç 3', installment_count: 12, sort_order: 3, total_amount: 0, start_year: y, start_month: m },
-        { name: 'Borç 4', installment_count: 18, sort_order: 4, total_amount: 0, start_year: y, start_month: m }
+        {
+            name: 'Borç 1',
+            installment_count: 12,
+            sort_order: 1,
+            total_amount: 0,
+            start_year: y,
+            start_month: DEFAULT_START_MONTH,
+            due_day: DEFAULT_DUE_DAY
+        },
+        {
+            name: 'Borç 2',
+            installment_count: 12,
+            sort_order: 2,
+            total_amount: 0,
+            start_year: y,
+            start_month: DEFAULT_START_MONTH,
+            due_day: DEFAULT_DUE_DAY
+        },
+        {
+            name: 'Borç 3',
+            installment_count: 12,
+            sort_order: 3,
+            total_amount: 0,
+            start_year: y,
+            start_month: DEFAULT_START_MONTH,
+            due_day: DEFAULT_DUE_DAY
+        },
+        {
+            name: 'Borç 4',
+            installment_count: 18,
+            sort_order: 4,
+            total_amount: 0,
+            start_year: y,
+            start_month: DEFAULT_START_MONTH,
+            due_day: DEFAULT_DUE_DAY
+        }
     ];
+}
+
+export const DEFAULT_LUMP_DEBT_NAMES = [
+    'Yıllık gelir vergisi',
+    'Gelir geçici vergi',
+    'Gerçek usulde vergi',
+    'Motorlu taşıtlar vergisi'
+] as const;
+
+export function defaultLumpDebtSeeds(): { name: string; sort_order: number; amount: number }[] {
+    return DEFAULT_LUMP_DEBT_NAMES.map((name, i) => ({
+        name,
+        sort_order: i + 1,
+        amount: 0
+    }));
 }
 
 /** Eşit taksit; son satıra kuruş farkı */
@@ -90,6 +158,55 @@ export function addMonths(
 ): { year: number; month: number } {
     const idx = year * 12 + (month - 1) + offset;
     return { year: Math.floor(idx / 12), month: (idx % 12) + 1 };
+}
+
+/** Ayın son gününü aşmayan vade günü (Şubat vb.) */
+export function clampedDueDay(year: number, month: number, dueDay: number): number {
+    const last = new Date(year, month, 0).getDate();
+    return Math.min(Math.max(1, dueDay || DEFAULT_DUE_DAY), last);
+}
+
+export function dueDateISO(year: number, month: number, dueDay = DEFAULT_DUE_DAY): string {
+    const d = clampedDueDay(year, month, dueDay);
+    return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+export function formatDueLabel(year: number, month: number, dueDay = DEFAULT_DUE_DAY): string {
+    const d = clampedDueDay(year, month, dueDay);
+    return `${d} ${monthLabel(month)} ${year}`;
+}
+
+function startOfToday(now: Date): Date {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+export function installmentDueDate(
+    year: number,
+    month: number,
+    dueDay = DEFAULT_DUE_DAY
+): Date {
+    return new Date(year, month - 1, clampedDueDay(year, month, dueDay));
+}
+
+export function isInstallmentOverdue(
+    year: number,
+    month: number,
+    dueDay: number,
+    isPaid: boolean,
+    now = new Date()
+): boolean {
+    if (isPaid) return false;
+    return startOfToday(now) > installmentDueDate(year, month, dueDay);
+}
+
+export function isInstallmentDueThisMonth(
+    year: number,
+    month: number,
+    isPaid: boolean,
+    now = new Date()
+): boolean {
+    if (isPaid) return false;
+    return year === now.getFullYear() && month === now.getMonth() + 1;
 }
 
 export function buildInstallmentRows(
@@ -183,20 +300,7 @@ export type TaxInstallmentSummary = {
     byDebt: DebtSummary[];
 };
 
-function isDueMonth(year: number, month: number, now: Date): boolean {
-    return year === now.getFullYear() && month === now.getMonth() + 1;
-}
-
-function isPastMonth(year: number, month: number, now: Date): boolean {
-    const cur = now.getFullYear() * 12 + now.getMonth();
-    const row = year * 12 + (month - 1);
-    return row < cur;
-}
-
-export function summarizeDebt(
-    debt: TaxDebt,
-    rows: TaxInstallmentRow[]
-): DebtSummary {
+export function summarizeDebt(debt: TaxDebt, rows: TaxInstallmentRow[]): DebtSummary {
     const list = rows.filter((r) => r.debt_id === debt.id);
     const paid = list.filter((r) => r.is_paid);
     const unpaid = list.filter((r) => !r.is_paid);
@@ -211,7 +315,8 @@ export function summarizeDebt(
         paidCount: paid.length,
         unpaidCount: unpaid.length,
         installmentCount: debt.installment_count,
-        progress: total > 0 ? paidAmount / total : paid.length / Math.max(1, debt.installment_count)
+        progress:
+            total > 0 ? paidAmount / total : paid.length / Math.max(1, debt.installment_count)
     };
 }
 
@@ -227,6 +332,8 @@ export function summarizeTaxInstallments(
     const paidCount = byDebt.reduce((s, d) => s + d.paidCount, 0);
     const unpaidCount = byDebt.reduce((s, d) => s + d.unpaidCount, 0);
 
+    const dueDayByDebt = new Map(debts.map((d) => [d.id, d.due_day ?? DEFAULT_DUE_DAY]));
+
     let dueCount = 0;
     let dueAmount = 0;
     let overdueCount = 0;
@@ -234,10 +341,11 @@ export function summarizeTaxInstallments(
     for (const r of rows) {
         if (r.is_paid) continue;
         const amt = Number(r.amount);
-        if (isDueMonth(r.year, r.month, now)) {
+        const dueDay = dueDayByDebt.get(r.debt_id) ?? DEFAULT_DUE_DAY;
+        if (isInstallmentDueThisMonth(r.year, r.month, false, now)) {
             dueCount += 1;
             dueAmount += amt;
-        } else if (isPastMonth(r.year, r.month, now)) {
+        } else if (isInstallmentOverdue(r.year, r.month, dueDay, false, now)) {
             overdueCount += 1;
             overdueAmount += amt;
         }
@@ -253,6 +361,25 @@ export function summarizeTaxInstallments(
         dueThisMonth: { count: dueCount, amount: round2(dueAmount) },
         overdue: { count: overdueCount, amount: round2(overdueAmount) },
         byDebt
+    };
+}
+
+export function summarizeLumpDebts(items: TaxLumpDebt[]): {
+    total: number;
+    paidAmount: number;
+    unpaidAmount: number;
+    unpaidCount: number;
+} {
+    const paidAmount = round2(
+        items.filter((i) => i.is_paid).reduce((s, i) => s + Number(i.amount), 0)
+    );
+    const unpaid = items.filter((i) => !i.is_paid);
+    const unpaidAmount = round2(unpaid.reduce((s, i) => s + Number(i.amount), 0));
+    return {
+        total: round2(paidAmount + unpaidAmount),
+        paidAmount,
+        unpaidAmount,
+        unpaidCount: unpaid.length
     };
 }
 

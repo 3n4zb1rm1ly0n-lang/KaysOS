@@ -57,6 +57,8 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
     const [grossInput, setGrossInput] = useState(embed?.grossInput ?? '');
     const [expenseRate, setExpenseRate] = useState<ExpenseVatRate>(20);
     const [targetKdv, setTargetKdv] = useState('');
+    /** receipt = seçili oranda istediğim KDV; payable = ciro sonrası ödenecek bakiye */
+    const [kdvInputMode, setKdvInputMode] = useState<'receipt' | 'payable'>('receipt');
     const [targetMode, setTargetMode] = useState<'base' | 'tax' | 'none'>('none');
     const [targetBase, setTargetBase] = useState('');
     const [targetTax, setTargetTax] = useState('');
@@ -191,7 +193,14 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
             existingDeductibleVat: existingDeductible,
             existingExpenseNet: existingExpenseNet,
             existingKdvPaid: existingKdvPaid,
-            targetPayableKdv: targetKdv.trim() === '' ? null : parseMoney(targetKdv),
+            desiredReceiptVat:
+                kdvInputMode === 'receipt' && targetKdv.trim() !== ''
+                    ? parseMoney(targetKdv)
+                    : null,
+            targetPayableKdv:
+                kdvInputMode === 'payable' && targetKdv.trim() !== ''
+                    ? parseMoney(targetKdv)
+                    : null,
             targetTaxableBase:
                 targetMode === 'base' && targetBase.trim() !== ''
                     ? parseMoney(targetBase)
@@ -209,6 +218,7 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
         existingExpenseNet,
         existingKdvPaid,
         targetKdv,
+        kdvInputMode,
         targetMode,
         targetBase,
         targetTax,
@@ -232,8 +242,8 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
                     </h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                         {embedded
-                            ? 'Üstteki brüt ve giderler canlı alınır. Hedef KDV / matrah gir; toplanacak fiş tutarını gör.'
-                            : 'Brüt ciroyu yaz veya aylık kazançtan çek; ödemek istediğin KDV / matrah (veya GV) için toplanacak fiş tutarını gör.'}
+                            ? 'Üstteki brüt/gider canlı. Varsayılan: istediğin fiş KDV’si → ne kadar alışveriş.'
+                            : 'Varsayılan: seçili oranda istediğin KDV tutarı → alınacak ürün/gider (KDV dahil).'}
                     </p>
                 </div>
             </div>
@@ -425,21 +435,62 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
                         </div>
                     </label>
 
-                    <label className="space-y-1 text-sm">
-                        <span className="text-xs text-muted-foreground">
-                            Hedef ödenecek KDV (₺)
+                    <label className="space-y-1 text-sm sm:col-span-2">
+                        <span className="text-xs text-muted-foreground">KDV hedefi türü</span>
+                        <div className="mb-1.5 flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setKdvInputMode('receipt')}
+                                className={`rounded-md border px-2 py-1 text-[11px] ${
+                                    kdvInputMode === 'receipt'
+                                        ? 'border-primary/50 bg-primary/10 text-primary'
+                                        : 'border-border hover:bg-secondary/40'
+                                }`}
+                            >
+                                Fiş KDV’si
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setKdvInputMode('payable')}
+                                className={`rounded-md border px-2 py-1 text-[11px] ${
+                                    kdvInputMode === 'payable'
+                                        ? 'border-primary/50 bg-primary/10 text-primary'
+                                        : 'border-border hover:bg-secondary/40'
+                                }`}
+                            >
+                                Ödenecek bakiye (ciro sonrası)
+                            </button>
+                        </div>
+                        <span className="block text-xs text-muted-foreground">
+                            {kdvInputMode === 'receipt'
+                                ? `İstediğim KDV tutarı (₺) — seçili %${expenseRate}`
+                                : 'Hedef ödenecek KDV bakiyesi (₺)'}
                         </span>
                         <input
                             type="text"
                             inputMode="decimal"
                             value={targetKdv}
                             onChange={(e) => setTargetKdv(e.target.value)}
-                            placeholder="örn. 5000"
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                            placeholder={
+                                kdvInputMode === 'receipt' ? 'örn. 2000' : 'örn. 5000'
+                            }
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
                         />
+                        {kdvInputMode === 'receipt' && (
+                            <p className="text-[10px] text-muted-foreground">
+                                Örn. %{expenseRate} KDV’den {fmtMoney(2000)} KDV için ≈{' '}
+                                {fmtMoney(
+                                    expenseRate > 0
+                                        ? (2000 * (100 + expenseRate)) / expenseRate
+                                        : 0
+                                )}{' '}
+                                (KDV dahil) · net ≈{' '}
+                                {fmtMoney(expenseRate > 0 ? 2000 / (expenseRate / 100) : 0)}.
+                            </p>
+                        )}
                     </label>
 
-                    <div className="space-y-1 text-sm">
+                    <div className="space-y-1 text-sm sm:col-span-2">
                         <span className="text-xs text-muted-foreground">Matrah / GV hedefi</span>
                         <div className="mb-1.5 flex flex-wrap gap-1.5">
                             {(
@@ -512,28 +563,37 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
                     </p>
                     {!hasTarget ? (
                         <p className="text-sm text-muted-foreground">
-                            Hedef ödenecek KDV ve/veya matrah (GV) gir; toplanacak fiş tutarı
-                            burada çıkar.
+                            İstediğin KDV tutarını (ör. %{expenseRate}’da 2000 ₺) yaz; ne kadarlık
+                            ürün/gider alman gerektiği burada çıkar.
                         </p>
                     ) : (
                         <>
                             <div className="flex items-baseline justify-between gap-2">
                                 <span className="text-sm font-medium">
-                                    Toplanacak fiş (KDV dahil)
+                                    Alınacak tutar (KDV dahil)
                                 </span>
                                 <span className="text-xl font-semibold tabular-nums text-primary">
                                     {fmtMoney(result.receiptsNeeded)}
                                 </span>
                             </div>
+                            {kdvInputMode === 'receipt' &&
+                                targetKdv.trim() !== '' &&
+                                result.receiptsForKdv > 0 && (
+                                    <p className="text-xs text-muted-foreground">
+                                        %{expenseRate} KDV × {fmtMoney(parseMoney(targetKdv))} →
+                                        net {fmtMoney(result.expenseNetFromReceipts)} + KDV{' '}
+                                        {fmtMoney(result.deductibleVatFromReceipts)}
+                                    </p>
+                                )}
                             <dl className="grid gap-1.5 text-xs sm:grid-cols-2">
                                 <div className="flex justify-between gap-2">
-                                    <dt className="text-muted-foreground">→ Net gider</dt>
+                                    <dt className="text-muted-foreground">→ Net (KDV hariç)</dt>
                                     <dd className="tabular-nums">
                                         {fmtMoney(result.expenseNetFromReceipts)}
                                     </dd>
                                 </div>
                                 <div className="flex justify-between gap-2">
-                                    <dt className="text-muted-foreground">→ İndirilecek KDV</dt>
+                                    <dt className="text-muted-foreground">→ KDV tutarı</dt>
                                     <dd className="tabular-nums">
                                         {fmtMoney(result.deductibleVatFromReceipts)}
                                     </dd>

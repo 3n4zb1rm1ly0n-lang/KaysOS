@@ -76,7 +76,7 @@ export function taxableBaseForTargetTax(
 }
 
 export type ReceiptSimInput = {
-    /** KDV dahil brüt ciro */
+    /** KDV dahil brüt ciro (opsiyonel — 0 ise sadece fiş KDV hesabı) */
     grossInclusive: number;
     salesVatRate?: number;
     expenseVatRate: number;
@@ -86,6 +86,11 @@ export type ReceiptSimInput = {
     existingExpenseNet?: number;
     /** Zaten ödenmiş KDV (mahsup) */
     existingKdvPaid?: number;
+    /**
+     * Seçili oranda elde etmek istediğin KDV tutarı.
+     * Örn. %10’da 2000 ₺ KDV → 22.000 ₺ (KDV dahil) alışveriş.
+     */
+    desiredReceiptVat?: number | null;
     /** Ödemek istediğin KDV bakiyesi (satış KDV − indirilecek − ödenen). null = yok say */
     targetPayableKdv?: number | null;
     /** İstediğin matrah (net ciro − gider net). null = yok say */
@@ -138,9 +143,20 @@ export function simulateReceiptTarget(input: ReceiptSimInput): ReceiptSimResult 
 
     let neededDeductibleVat: number | null = null;
     let receiptsForKdv = 0;
-    if (input.targetPayableKdv != null && Number.isFinite(input.targetPayableKdv)) {
+
+    // 1) Doğrudan: seçili oranda X ₺ KDV istiyorum → ne kadarlık alışveriş?
+    if (input.desiredReceiptVat != null && Number.isFinite(input.desiredReceiptVat)) {
+        const wantVat = Math.max(0, Number(input.desiredReceiptVat));
+        neededDeductibleVat = wantVat;
+        if (expenseVatRate <= 0 && wantVat > 0) {
+            warnings.push('KDV’siz fiş KDV üretmez; oran seç (%1 / %10 / %20).');
+            receiptsForKdv = 0;
+        } else {
+            receiptsForKdv = receiptGrossFromDeductibleVat(wantVat, expenseVatRate);
+        }
+    } else if (input.targetPayableKdv != null && Number.isFinite(input.targetPayableKdv)) {
+        // 2) İleri: ciro sonrası ödenecek KDV bakiyesi hedefi
         const target = Math.max(0, Number(input.targetPayableKdv));
-        // salesVat - deductible - paid = target  →  deductible = salesVat - paid - target
         const totalDeductibleNeeded = Math.max(
             0,
             sales.salesVat - existingKdvPaid - target

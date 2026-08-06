@@ -325,6 +325,27 @@ export function buildPaymentCalendar(
     return rows;
 }
 
+/** Eldeki nakit görünümü: net ciro − tevfikat − gider (net) */
+export function monthlyCashNet(
+    netRevenue: number,
+    tevfikat: number,
+    expenseNetTotal: number
+): number {
+    return (
+        (Number.isFinite(netRevenue) ? netRevenue : 0) -
+        (Number.isFinite(tevfikat) ? tevfikat : 0) -
+        (Number.isFinite(expenseNetTotal) ? expenseNetTotal : 0)
+    );
+}
+
+/** Gider satırı vergi ödemesi gibi mi? (source=tax veya isimde vergi/kdv/…) */
+export function isTaxLikeExpenseName(name: string, source?: string | null): boolean {
+    if (source && source.trim().toLowerCase() === 'tax') return true;
+    const n = name.trim().toLowerCase();
+    if (!n) return false;
+    return /vergi|kdv|tevfikat|geçici|gelir\s*verg/.test(n);
+}
+
 /** Yıl sonu 2 taksit tutarı (eşit). */
 export function yearEndInstallments(yearEndResidual: number): {
     march: number;

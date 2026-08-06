@@ -1489,7 +1489,7 @@ export default function MonthlyRevenuePage() {
                                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                             <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">
                                                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                                    Özet (KDV hariç matrah)
+                                                    Özet (matrah + nakit)
                                                 </h4>
                                                 <dl className="space-y-1.5 text-sm">
                                                     <div className="flex justify-between gap-2">
@@ -1512,8 +1512,8 @@ export default function MonthlyRevenuePage() {
                                                         <dt className="text-muted-foreground">
                                                             Tevfikat (peşin)
                                                         </dt>
-                                                        <dd className="tabular-nums">
-                                                            {fmtMoney(r.tevfikat)}
+                                                        <dd className="tabular-nums text-amber-600 dark:text-amber-400">
+                                                            −{fmtMoney(r.tevfikat)}
                                                         </dd>
                                                     </div>
                                                     <div className="flex justify-between gap-2">
@@ -1525,12 +1525,30 @@ export default function MonthlyRevenuePage() {
                                                         </dd>
                                                     </div>
                                                     <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
-                                                        <dt className="font-medium">Aylık matrah</dt>
-                                                        <dd className="font-medium tabular-nums">
+                                                        <dt className="text-muted-foreground">
+                                                            Aylık matrah
+                                                        </dt>
+                                                        <dd className="tabular-nums">
                                                             {fmtMoney(r.base)}
                                                         </dd>
                                                     </div>
+                                                    <div className="flex justify-between gap-2 pt-1.5 border-t border-primary/25">
+                                                        <dt className="font-medium">
+                                                            Aylık net (nakit)
+                                                        </dt>
+                                                        <dd className="font-semibold tabular-nums text-primary">
+                                                            {fmtMoney(
+                                                                r.netRevenue -
+                                                                    r.tevfikat -
+                                                                    r.expenseNetTotal
+                                                            )}
+                                                        </dd>
+                                                    </div>
                                                 </dl>
+                                                <p className="text-[10px] text-muted-foreground">
+                                                    Nakit = net ciro − tevfikat − gider · Matrah =
+                                                    net ciro − gider (GV tabanı)
+                                                </p>
                                             </div>
 
                                             <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">

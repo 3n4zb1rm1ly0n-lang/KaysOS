@@ -20,7 +20,8 @@ import {
     Package,
     Shield,
     Fuel,
-    Landmark
+    Landmark,
+    FileText
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -46,6 +47,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Aylık kazanç',
         href: '/app/dashboard/company-finance/monthly',
         icon: Wallet
+    },
+    {
+        id: 'cf-taxes',
+        label: 'Vergiler',
+        href: '/app/dashboard/company-finance/vergiler',
+        icon: FileText
     },
     {
         id: 'cf-paket-prim',

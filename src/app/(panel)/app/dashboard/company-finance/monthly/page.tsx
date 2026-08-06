@@ -1554,7 +1554,7 @@ export default function MonthlyRevenuePage() {
                                                                         </div>
                                                                     </div>
                                                                     <div className="flex flex-wrap items-end justify-between gap-2">
-                                                                        <div className="flex flex-wrap items-center gap-3 pb-1.5">
+                                                                        <div className="flex flex-wrap items-center gap-2 pb-1.5">
                                                                             <label className="flex items-center gap-2 text-xs text-muted-foreground">
                                                                                 <input
                                                                                     type="checkbox"
@@ -1576,27 +1576,33 @@ export default function MonthlyRevenuePage() {
                                                                                 />
                                                                                 İndirilecek KDV
                                                                             </label>
-                                                                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={
-                                                                                        ex.includeInCashFlow
-                                                                                    }
-                                                                                    onChange={(e) =>
-                                                                                        updateExpense(
-                                                                                            r.idx,
-                                                                                            ex.localId,
-                                                                                            {
-                                                                                                includeInCashFlow:
-                                                                                                    e
-                                                                                                        .target
-                                                                                                        .checked
-                                                                                            }
-                                                                                        )
-                                                                                    }
-                                                                                />
-                                                                                Nakit’e dahil
-                                                                            </label>
+                                                                            <button
+                                                                                type="button"
+                                                                                title={
+                                                                                    ex.includeInCashFlow
+                                                                                        ? 'Açık olunca aylık nakitten düşmez; KDV/matrah etkilenir'
+                                                                                        : 'Kapalı: gider aylık nakitten de düşer'
+                                                                                }
+                                                                                onClick={() =>
+                                                                                    updateExpense(
+                                                                                        r.idx,
+                                                                                        ex.localId,
+                                                                                        {
+                                                                                            includeInCashFlow:
+                                                                                                !ex.includeInCashFlow
+                                                                                        }
+                                                                                    )
+                                                                                }
+                                                                                className={`text-[11px] rounded-md border px-2 py-1 transition-colors ${
+                                                                                    !ex.includeInCashFlow
+                                                                                        ? 'border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                                                                        : 'border-border text-muted-foreground hover:bg-secondary'
+                                                                                }`}
+                                                                            >
+                                                                                {!ex.includeInCashFlow
+                                                                                    ? 'Nakit dışı'
+                                                                                    : 'Nakite dahil etme'}
+                                                                            </button>
                                                                         </div>
                                                                         <button
                                                                             type="button"

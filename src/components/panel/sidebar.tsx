@@ -21,7 +21,10 @@ import {
     Shield,
     Fuel,
     Landmark,
-    FileText
+    FileText,
+    UserRound,
+    WalletCards,
+    CreditCard
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -33,6 +36,22 @@ export interface NavLinkItem {
     href: string;
     icon: LucideIcon;
 }
+
+/** Kişisel Finans grubu */
+export const PERSONAL_FINANCE_NAV_ITEMS: NavLinkItem[] = [
+    {
+        id: 'pf-income',
+        label: 'Gelirler',
+        href: '/app/dashboard/personal-finance/income',
+        icon: WalletCards
+    },
+    {
+        id: 'pf-expenses',
+        label: 'Giderler',
+        href: '/app/dashboard/personal-finance/expenses',
+        icon: CreditCard
+    }
+];
 
 /** Şirket Finans grubu */
 export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
@@ -92,11 +111,19 @@ export function Sidebar() {
     const companyFinanceActive = COMPANY_FINANCE_NAV_ITEMS.some((item) =>
         pathActive(pathname, item.href)
     );
+    const personalFinanceActive = PERSONAL_FINANCE_NAV_ITEMS.some((item) =>
+        pathActive(pathname, item.href)
+    );
     const [companyFinanceOpen, setCompanyFinanceOpen] = useState(companyFinanceActive);
+    const [personalFinanceOpen, setPersonalFinanceOpen] = useState(personalFinanceActive);
 
     useEffect(() => {
         if (companyFinanceActive) setCompanyFinanceOpen(true);
     }, [companyFinanceActive]);
+
+    useEffect(() => {
+        if (personalFinanceActive) setPersonalFinanceOpen(true);
+    }, [personalFinanceActive]);
 
     const linkClass = (href: string) =>
         `flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
@@ -167,6 +194,42 @@ export function Sidebar() {
                     {companyFinanceOpen && (
                         <div className="mt-1 ml-2 pl-3 border-l border-border/80 space-y-0.5">
                             {COMPANY_FINANCE_NAV_ITEMS.map((item) => (
+                                <Link
+                                    key={item.id}
+                                    href={item.href}
+                                    className={`${linkClass(item.href)} py-2 pl-1`}
+                                >
+                                    <item.icon className="w-4 h-4 shrink-0 opacity-80" />
+                                    <span>{item.label}</span>
+                                </Link>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="pt-1">
+                    <button
+                        type="button"
+                        onClick={() => setPersonalFinanceOpen((o) => !o)}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors text-left ${
+                            personalFinanceActive && !personalFinanceOpen
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                        }`}
+                        aria-expanded={personalFinanceOpen}
+                    >
+                        <UserRound className="w-5 h-5 shrink-0" />
+                        <span className="flex-1">Kişisel Finans</span>
+                        {personalFinanceOpen ? (
+                            <ChevronDown className="w-4 h-4 shrink-0 opacity-70" />
+                        ) : (
+                            <ChevronRight className="w-4 h-4 shrink-0 opacity-70" />
+                        )}
+                    </button>
+
+                    {personalFinanceOpen && (
+                        <div className="mt-1 ml-2 pl-3 border-l border-border/80 space-y-0.5">
+                            {PERSONAL_FINANCE_NAV_ITEMS.map((item) => (
                                 <Link
                                     key={item.id}
                                     href={item.href}

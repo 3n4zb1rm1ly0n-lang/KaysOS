@@ -21,6 +21,7 @@ import {
     type ResultEffect,
     type StepResolveCtx
 } from '@/lib/calc-steps';
+import { ReceiptTargetSim } from '@/components/panel/receipt-target-sim';
 
 interface CalcLine {
     id: string;
@@ -620,9 +621,12 @@ export default function CompanyFinanceCalculatorPage() {
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Hesaplama</h2>
                 <p className="text-muted-foreground mt-1">
-                    Kalemleri hesaplayın; yalnızca “sonuç etkisi” seçilenler neti değiştirir.
+                    Fiş hedefi ile vergi planı; aşağıda kalem hesapları. Yalnızca “sonuç etkisi”
+                    seçilenler neti değiştirir.
                 </p>
             </div>
+
+            <ReceiptTargetSim />
 
             {schemaHint && (
                 <p className="text-sm rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">

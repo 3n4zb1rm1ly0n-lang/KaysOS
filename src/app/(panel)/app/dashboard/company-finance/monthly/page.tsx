@@ -7,6 +7,7 @@ import {
     Info,
     Loader2,
     Plus,
+    Receipt,
     Save,
     Trash2
 } from 'lucide-react';
@@ -23,6 +24,7 @@ import {
     salesFromGrossInclusive,
     type TaxBracket
 } from '@/lib/income-tax';
+import { ReceiptTargetSim } from '@/components/panel/receipt-target-sim';
 
 const MONTH_LABELS = [
     'Ocak',
@@ -146,6 +148,8 @@ export default function MonthlyRevenuePage() {
     const [paketClosings, setPaketClosings] = useState<Record<number, PaketPrimClosing>>(
         {}
     );
+    /** Açık ayda fiş önerisi paneli */
+    const [receiptSimMonth, setReceiptSimMonth] = useState<number | null>(null);
 
     const loadYear = useCallback(async (y: number) => {
         setLoading(true);
@@ -1148,7 +1152,14 @@ export default function MonthlyRevenuePage() {
                             <li key={r.idx} className="bg-background">
                                 <button
                                     type="button"
-                                    onClick={() => setOpenMonth(open ? null : r.idx)}
+                                    onClick={() => {
+                                        if (open) {
+                                            setOpenMonth(null);
+                                            setReceiptSimMonth(null);
+                                        } else {
+                                            setOpenMonth(r.idx);
+                                        }
+                                    }}
                                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-secondary/30 transition-colors"
                                 >
                                     {open ? (
@@ -1282,6 +1293,24 @@ export default function MonthlyRevenuePage() {
                                                     Giderler
                                                 </h4>
                                                 <div className="flex flex-wrap gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setReceiptSimMonth((m) =>
+                                                                m === r.idx ? null : r.idx
+                                                            )
+                                                        }
+                                                        className={`inline-flex items-center gap-1 text-[11px] rounded-md border px-2 py-1 ${
+                                                            receiptSimMonth === r.idx
+                                                                ? 'border-primary/50 bg-primary/10 text-primary'
+                                                                : 'border-border hover:bg-secondary'
+                                                        }`}
+                                                    >
+                                                        <Receipt className="w-3 h-3" />
+                                                        {receiptSimMonth === r.idx
+                                                            ? 'Öneriyi gizle'
+                                                            : 'Bu ay için öner'}
+                                                    </button>
                                                     {presets.map((p) => (
                                                         <button
                                                             key={p.id}
@@ -1303,6 +1332,22 @@ export default function MonthlyRevenuePage() {
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {receiptSimMonth === r.idx && (
+                                                <ReceiptTargetSim
+                                                    embed={{
+                                                        year,
+                                                        monthIndex: r.idx,
+                                                        grossInput: draft.grossInput,
+                                                        kdvPaid: parseMoney(draft.kdvPaidInput),
+                                                        manualDeductible: parseMoney(
+                                                            draft.kdvDeductibleInput
+                                                        ),
+                                                        expenseNet: r.expenseNetTotal,
+                                                        expenseDeductibleKdv: r.expenseKdvIncluded
+                                                    }}
+                                                />
+                                            )}
 
                                             {draft.expenses.length === 0 ? (
                                                 <p className="text-sm text-muted-foreground">

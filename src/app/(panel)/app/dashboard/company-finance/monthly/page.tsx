@@ -69,6 +69,19 @@ type KdvPreset = {
     sort_order: number;
 };
 
+/** Paket prim → aylık kazanç kapanış özeti */
+type PaketPrimClosing = {
+    month: number;
+    is_closed: boolean;
+    gross_sent: number;
+    fixed_pay: number;
+    daily_prim_total: number;
+    monthly_bonus: number;
+    total_packages: number;
+    work_days: number;
+    sent_at: string | null;
+};
+
 type BracketRow = TaxBracket & { id?: string; sort_order?: number };
 
 function fmtMoney(n: number): string {
@@ -130,13 +143,16 @@ export default function MonthlyRevenuePage() {
     const [calendarOpen, setCalendarOpen] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
+    const [paketClosings, setPaketClosings] = useState<Record<number, PaketPrimClosing>>(
+        {}
+    );
 
     const loadYear = useCallback(async (y: number) => {
         setLoading(true);
         setError(null);
         setStatus(null);
 
-        const [entriesRes, bracketsRes, presetsRes] = await Promise.all([
+        const [entriesRes, bracketsRes, presetsRes, paketRes] = await Promise.all([
             supabase
                 .from('company_finance_monthly_entries')
                 .select('*')
@@ -150,7 +166,13 @@ export default function MonthlyRevenuePage() {
             supabase
                 .from('company_finance_kdv_presets')
                 .select('*')
-                .order('sort_order')
+                .order('sort_order'),
+            supabase
+                .from('company_finance_paket_prim_closings')
+                .select(
+                    'month, is_closed, gross_sent, fixed_pay, daily_prim_total, monthly_bonus, total_packages, work_days, sent_at'
+                )
+                .eq('year', y)
         ]);
 
         if (entriesRes.error || bracketsRes.error || presetsRes.error) {
@@ -163,6 +185,26 @@ export default function MonthlyRevenuePage() {
             setLoading(false);
             return;
         }
+
+        const paketByMonth: Record<number, PaketPrimClosing> = {};
+        if (!paketRes.error && paketRes.data) {
+            for (const row of paketRes.data) {
+                const month = Number(row.month);
+                if (month < 1 || month > 12) continue;
+                paketByMonth[month] = {
+                    month,
+                    is_closed: Boolean(row.is_closed),
+                    gross_sent: Number(row.gross_sent) || 0,
+                    fixed_pay: Number(row.fixed_pay) || 0,
+                    daily_prim_total: Number(row.daily_prim_total) || 0,
+                    monthly_bonus: Number(row.monthly_bonus) || 0,
+                    total_packages: Number(row.total_packages) || 0,
+                    work_days: Number(row.work_days) || 0,
+                    sent_at: row.sent_at ? String(row.sent_at) : null
+                };
+            }
+        }
+        setPaketClosings(paketByMonth);
 
         const drafts = buildYearDrafts();
         const entries = entriesRes.data || [];
@@ -316,6 +358,9 @@ export default function MonthlyRevenuePage() {
     const yearTotals = useMemo(() => {
         const withData = resolved.filter((r) => r.hasRecord && !r.future);
         const allRecorded = resolved.filter((r) => r.hasRecord);
+        const paketList = Object.values(paketClosings).filter(
+            (c) => c.is_closed || c.gross_sent > 0 || c.total_packages > 0
+        );
         return {
             monthsFilled: allRecorded.length,
             gross: withData.reduce((a, r) => a + r.gross, 0) +
@@ -323,9 +368,12 @@ export default function MonthlyRevenuePage() {
             netRevenue: resolved.reduce((a, r) => a + (r.hasRecord ? r.netRevenue : 0), 0),
             expenseNet: resolved.reduce((a, r) => a + (r.hasRecord ? r.expenseNetTotal : 0), 0),
             salesVat: resolved.reduce((a, r) => a + (r.hasRecord ? r.salesVat : 0), 0),
-            tevfikat: schedule.cumulativeTevfikat
+            tevfikat: schedule.cumulativeTevfikat,
+            paketMonths: paketList.length,
+            paketPackages: paketList.reduce((a, c) => a + c.total_packages, 0),
+            paketGrossSent: paketList.reduce((a, c) => a + c.gross_sent, 0)
         };
-    }, [resolved, schedule.cumulativeTevfikat]);
+    }, [resolved, schedule.cumulativeTevfikat, paketClosings]);
 
     const paymentCalendar = useMemo(() => {
         // Hesaplanan KDV yükümlülüğü: satış KDV − indirilecek (ödenen mahsup edilmeden önce)
@@ -635,7 +683,7 @@ export default function MonthlyRevenuePage() {
     const years = [currentYear - 1, currentYear, currentYear + 1];
 
     return (
-        <div className="space-y-8 max-w-4xl">
+        <div className="space-y-8 max-w-5xl">
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Aylık kazanç</h2>
                 <p className="text-muted-foreground mt-1">
@@ -709,6 +757,24 @@ export default function MonthlyRevenuePage() {
                             {fmtMoney(schedule.gvDueAfterTevfikat)}
                         </dd>
                     </div>
+                    {yearTotals.paketMonths > 0 && (
+                        <>
+                            <div>
+                                <dt className="text-xs text-muted-foreground">Paket (yıl)</dt>
+                                <dd className="font-medium tabular-nums">
+                                    {yearTotals.paketPackages.toLocaleString('tr-TR')}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-xs text-muted-foreground">
+                                    Prim brüt gönderilen
+                                </dt>
+                                <dd className="font-medium tabular-nums">
+                                    {fmtMoney(yearTotals.paketGrossSent)}
+                                </dd>
+                            </div>
+                        </>
+                    )}
                 </dl>
             </div>
 
@@ -1420,7 +1486,7 @@ export default function MonthlyRevenuePage() {
                                             )}
                                         </div>
 
-                                        <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                             <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2">
                                                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                                     Özet (KDV hariç matrah)
@@ -1523,6 +1589,94 @@ export default function MonthlyRevenuePage() {
                                                         </dd>
                                                     </div>
                                                 </dl>
+                                            </div>
+
+                                            <div className="rounded-lg border border-border bg-background px-4 py-3 space-y-2 md:col-span-2 xl:col-span-1">
+                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    Paket prim
+                                                </h4>
+                                                {(() => {
+                                                    const pp = paketClosings[r.idx + 1];
+                                                    const hasPp =
+                                                        pp &&
+                                                        (pp.is_closed ||
+                                                            pp.gross_sent > 0 ||
+                                                            pp.total_packages > 0);
+                                                    if (!hasPp || !pp) {
+                                                        return (
+                                                            <p className="text-sm text-muted-foreground py-2">
+                                                                Bu ay paket primden henüz
+                                                                gönderilmedi.
+                                                            </p>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <dl className="space-y-1.5 text-sm">
+                                                            <div className="flex justify-between gap-2">
+                                                                <dt className="text-muted-foreground">
+                                                                    Toplam paket
+                                                                </dt>
+                                                                <dd className="tabular-nums">
+                                                                    {pp.total_packages.toLocaleString(
+                                                                        'tr-TR'
+                                                                    )}
+                                                                </dd>
+                                                            </div>
+                                                            <div className="flex justify-between gap-2">
+                                                                <dt className="text-muted-foreground">
+                                                                    Çalışılan gün
+                                                                </dt>
+                                                                <dd className="tabular-nums">
+                                                                    {pp.work_days}
+                                                                </dd>
+                                                            </div>
+                                                            <div className="flex justify-between gap-2">
+                                                                <dt className="text-muted-foreground">
+                                                                    Sabit (gün × ücret)
+                                                                </dt>
+                                                                <dd className="tabular-nums">
+                                                                    {fmtMoney(pp.fixed_pay)}
+                                                                </dd>
+                                                            </div>
+                                                            <div className="flex justify-between gap-2">
+                                                                <dt className="text-muted-foreground">
+                                                                    Günlük prim toplamı
+                                                                </dt>
+                                                                <dd className="tabular-nums">
+                                                                    {fmtMoney(
+                                                                        pp.daily_prim_total
+                                                                    )}
+                                                                </dd>
+                                                            </div>
+                                                            <div className="flex justify-between gap-2">
+                                                                <dt className="text-muted-foreground">
+                                                                    Aylık bonus
+                                                                </dt>
+                                                                <dd className="tabular-nums">
+                                                                    {fmtMoney(pp.monthly_bonus)}
+                                                                </dd>
+                                                            </div>
+                                                            <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
+                                                                <dt className="font-medium">
+                                                                    Gönderilen brüt
+                                                                </dt>
+                                                                <dd className="font-medium tabular-nums text-primary">
+                                                                    {fmtMoney(pp.gross_sent)}
+                                                                </dd>
+                                                            </div>
+                                                            {pp.sent_at && (
+                                                                <p className="text-[11px] text-muted-foreground pt-1">
+                                                                    {new Date(
+                                                                        pp.sent_at
+                                                                    ).toLocaleString('tr-TR')}
+                                                                    {pp.is_closed
+                                                                        ? ' · kapatıldı'
+                                                                        : ''}
+                                                                </p>
+                                                            )}
+                                                        </dl>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
 

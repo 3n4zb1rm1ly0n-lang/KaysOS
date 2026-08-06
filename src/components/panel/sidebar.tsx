@@ -19,7 +19,8 @@ import {
     Mail,
     Package,
     Shield,
-    Fuel
+    Fuel,
+    Landmark
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -63,6 +64,12 @@ export const COMPANY_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Benzin',
         href: '/app/dashboard/company-finance/fuel',
         icon: Fuel
+    },
+    {
+        id: 'cf-tax-installments',
+        label: 'Vergi taksit',
+        href: '/app/dashboard/company-finance/vergi-taksit',
+        icon: Landmark
     }
 ];
 

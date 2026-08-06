@@ -33,7 +33,9 @@ create table if not exists company_finance_monthly_expenses (
   kdv_rate numeric not null default 20 check (kdv_rate >= 0 and kdv_rate <= 100),
   include_in_deductible_kdv boolean not null default true,
   note text not null default '',
-  sort_order integer not null default 0
+  sort_order integer not null default 0,
+  -- Örn. fuel = Benzin sayfasından aktarılan (KDV’siz net gider)
+  source text not null default ''
 );
 
 create index if not exists company_finance_monthly_expenses_entry_idx

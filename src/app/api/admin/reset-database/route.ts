@@ -7,6 +7,7 @@ const TABLES = [
     'contact_messages',
     'idea_notes',
     'company_finance_fuel_logs',
+    'company_finance_fuel_closings',
     'company_finance_tax_lump_debts',
     'company_finance_tax_installment_rows',
     'company_finance_tax_installment_debts',

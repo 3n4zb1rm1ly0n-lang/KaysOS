@@ -125,3 +125,9 @@ export function monthBounds(year: number, monthIndex: number): { from: string; t
     const to = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
     return { from, to };
 }
+
+/** Aylık kazanç gider satırı — KDV yok, netten düşer */
+export const FUEL_EXPENSE_SOURCE = 'fuel';
+export const FUEL_EXPENSE_NAME = 'Benzin';
+export const FUEL_EXPENSE_KDV_RATE = 0;
+

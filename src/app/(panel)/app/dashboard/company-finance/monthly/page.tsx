@@ -48,6 +48,8 @@ type ExpenseDraft = {
     kdvRate: string;
     includeInDeductibleKdv: boolean;
     note: string;
+    /** Örn. fuel — Benzin sayfasından aktarılan */
+    source?: string;
 };
 
 type MonthDraft = {
@@ -189,7 +191,8 @@ export default function MonthlyRevenuePage() {
                         row.amount_gross != null ? String(row.amount_gross) : '',
                     kdvRate: row.kdv_rate != null ? String(row.kdv_rate) : '20',
                     includeInDeductibleKdv: row.include_in_deductible_kdv !== false,
-                    note: (row.note as string) || ''
+                    note: (row.note as string) || '',
+                    source: row.source ? String(row.source) : ''
                 });
             }
         }
@@ -468,7 +471,8 @@ export default function MonthlyRevenuePage() {
                 kdv_rate: parseMoney(ex.kdvRate),
                 include_in_deductible_kdv: ex.includeInDeductibleKdv,
                 note: ex.note.trim(),
-                sort_order: i
+                sort_order: i,
+                source: ex.source?.trim() || ''
             };
             if (ex.dbId) {
                 const { error: uErr } = await supabase
@@ -1254,6 +1258,11 @@ export default function MonthlyRevenuePage() {
                                                                     <div>
                                                                         <label className="text-[10px] text-muted-foreground">
                                                                             Ad
+                                                                            {ex.source === 'fuel' && (
+                                                                                <span className="ml-1 text-primary">
+                                                                                    · Benzin sayfası
+                                                                                </span>
+                                                                            )}
                                                                         </label>
                                                                         <input
                                                                             value={ex.name}

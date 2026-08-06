@@ -42,6 +42,8 @@ create table if not exists personal_finance_expenses (
   month integer not null check (month >= 1 and month <= 12),
   name text not null,
   amount numeric not null default 0,
+  -- Parçalı ödeme: kalan = amount - paid_amount
+  paid_amount numeric not null default 0,
   due_date date,
   is_paid boolean not null default false,
   repeats_monthly boolean not null default false,
@@ -51,5 +53,19 @@ create table if not exists personal_finance_expenses (
 
 create index if not exists personal_finance_expenses_ym_idx
   on personal_finance_expenses (year, month);
+
+-- -----------------------------------------------------------------------------
+-- RLS (diğer panel tablolarıyla aynı)
+-- -----------------------------------------------------------------------------
+alter table personal_finance_incomes enable row level security;
+alter table personal_finance_expenses enable row level security;
+
+drop policy if exists "Enable access to all users" on personal_finance_incomes;
+create policy "Enable access to all users" on personal_finance_incomes
+  for all using (true) with check (true);
+
+drop policy if exists "Enable access to all users" on personal_finance_expenses;
+create policy "Enable access to all users" on personal_finance_expenses
+  for all using (true) with check (true);
 
 notify pgrst, 'reload config';

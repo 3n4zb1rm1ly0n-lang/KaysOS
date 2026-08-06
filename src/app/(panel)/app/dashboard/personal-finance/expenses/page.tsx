@@ -8,6 +8,8 @@ import { MONTH_NAMES_TR } from '@/lib/income-tax';
 import {
     PF_EXPENSES,
     PF_INCOMES,
+    expenseIsFullyPaid,
+    expenseRemaining,
     fmtMoney,
     mapExpense,
     parseMoney,
@@ -27,8 +29,8 @@ export default function PersonalExpensesPage() {
 
     const [draftName, setDraftName] = useState('');
     const [draftAmount, setDraftAmount] = useState('');
+    const [draftPaidAmount, setDraftPaidAmount] = useState('');
     const [draftDue, setDraftDue] = useState('');
-    const [draftPaid, setDraftPaid] = useState(false);
     const [draftRepeat, setDraftRepeat] = useState(false);
 
     const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
@@ -54,11 +56,13 @@ export default function PersonalExpensesPage() {
         ]);
 
         if (expRes.error) {
+            const msg = expRes.error.message;
             setError(
-                expRes.error.message.includes('does not exist') ||
-                    expRes.error.code === '42P01'
+                msg.includes('does not exist') || expRes.error.code === '42P01'
                     ? 'Tablo bulunamadı. Supabase’te create_personal_finance.sql çalıştırın.'
-                    : expRes.error.message
+                    : msg.includes('paid_amount')
+                      ? 'Parçalı ödeme alanı eksik. Supabase’te add_personal_expense_paid_amount.sql çalıştırın.'
+                      : msg
             );
             setExpenses([]);
             setIncomeTotal(0);
@@ -86,7 +90,11 @@ export default function PersonalExpensesPage() {
         [expenses]
     );
     const unpaidTotal = useMemo(
-        () => expenses.filter((r) => !r.is_paid).reduce((a, r) => a + r.amount, 0),
+        () =>
+            expenses.reduce(
+                (a, r) => a + expenseRemaining(r.amount, r.paid_amount),
+                0
+            ),
         [expenses]
     );
     const remaining = incomeTotal - expenseTotal;
@@ -98,6 +106,9 @@ export default function PersonalExpensesPage() {
             setError('Tutar gir.');
             return;
         }
+        let paid = parseMoney(draftPaidAmount);
+        if (paid > amount) paid = amount;
+        const fully = expenseIsFullyPaid(amount, paid);
         setBusy(true);
         setError(null);
         const { error: insErr } = await supabase.from(PF_EXPENSES).insert([
@@ -106,22 +117,27 @@ export default function PersonalExpensesPage() {
                 month,
                 name,
                 amount,
+                paid_amount: paid,
                 due_date: draftDue || null,
-                is_paid: draftPaid,
+                is_paid: fully,
                 repeats_monthly: draftRepeat,
                 note: '',
                 sort_order: expenses.length + 1
             }
         ]);
         if (insErr) {
-            setError(insErr.message);
+            setError(
+                insErr.message.includes('paid_amount')
+                    ? 'Parçalı ödeme alanı eksik. Supabase’te add_personal_expense_paid_amount.sql çalıştırın.'
+                    : insErr.message
+            );
             setBusy(false);
             return;
         }
         setDraftName('');
         setDraftAmount('');
+        setDraftPaidAmount('');
         setDraftDue('');
-        setDraftPaid(false);
         setDraftRepeat(false);
         setStatus('Gider eklendi');
         setBusy(false);
@@ -133,6 +149,7 @@ export default function PersonalExpensesPage() {
         patch: Partial<{
             name: string;
             amount: number;
+            paid_amount: number;
             due_date: string | null;
             is_paid: boolean;
             repeats_monthly: boolean;
@@ -140,21 +157,53 @@ export default function PersonalExpensesPage() {
     ) => {
         const { error: uErr } = await supabase.from(PF_EXPENSES).update(patch).eq('id', id);
         if (uErr) {
-            setError(uErr.message);
+            setError(
+                uErr.message.includes('paid_amount')
+                    ? 'Parçalı ödeme alanı eksik. Supabase’te add_personal_expense_paid_amount.sql çalıştırın.'
+                    : uErr.message
+            );
             return;
         }
         setExpenses((prev) =>
+            prev.map((r) => {
+                if (r.id !== id) return r;
+                const next = {
+                    ...r,
+                    ...patch,
+                    due_date: patch.due_date !== undefined ? patch.due_date : r.due_date
+                };
+                const amt = next.amount;
+                const paid = next.paid_amount;
+                next.is_paid =
+                    patch.is_paid !== undefined
+                        ? patch.is_paid
+                        : expenseIsFullyPaid(amt, paid);
+                return next;
+            })
+        );
+    };
+
+    const persistAmountPaid = (row: PersonalExpenseRow, amount: number, paid: number) => {
+        let paidClamped = Math.max(0, paid);
+        if (paidClamped > amount) paidClamped = amount;
+        const fully = expenseIsFullyPaid(amount, paidClamped);
+        setExpenses((prev) =>
             prev.map((r) =>
-                r.id === id
+                r.id === row.id
                     ? {
                           ...r,
-                          ...patch,
-                          due_date:
-                              patch.due_date !== undefined ? patch.due_date : r.due_date
+                          amount,
+                          paid_amount: paidClamped,
+                          is_paid: fully
                       }
                     : r
             )
         );
+        void updateRow(row.id, {
+            amount,
+            paid_amount: paidClamped,
+            is_paid: fully
+        });
     };
 
     const removeRow = async (id: string) => {
@@ -194,6 +243,7 @@ export default function PersonalExpensesPage() {
                 month,
                 name: r.name,
                 amount: r.amount,
+                paid_amount: 0,
                 due_date: null,
                 is_paid: false,
                 repeats_monthly: true,
@@ -211,6 +261,11 @@ export default function PersonalExpensesPage() {
         setBusy(false);
         await load(year, month);
     };
+
+    const draftAmt = parseMoney(draftAmount);
+    const draftPaid = Math.min(parseMoney(draftPaidAmount), draftAmt || Infinity);
+    const draftLeft =
+        draftAmt > 0 ? expenseRemaining(draftAmt, Number.isFinite(draftPaid) ? draftPaid : 0) : 0;
 
     return (
         <div className="space-y-6 max-w-4xl">
@@ -275,7 +330,7 @@ export default function PersonalExpensesPage() {
                 </div>
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Ödenmedi
+                        Kalan borç
                     </p>
                     <p className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
                         {fmtMoney(unpaidTotal)}
@@ -283,7 +338,7 @@ export default function PersonalExpensesPage() {
                 </div>
                 <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Kalan
+                        Kalan (bütçe)
                     </p>
                     <p
                         className={`text-lg font-semibold tabular-nums ${
@@ -326,157 +381,210 @@ export default function PersonalExpensesPage() {
                             Bu ay henüz gider yok. Aşağıdan ekle.
                         </li>
                     )}
-                    {expenses.map((row) => (
-                        <li
-                            key={row.id}
-                            className={`rounded-lg border bg-background p-3 space-y-2 ${
-                                row.is_paid
-                                    ? 'border-border opacity-80'
-                                    : 'border-border'
-                            }`}
-                        >
-                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                                <div>
-                                    <label className="text-[10px] text-muted-foreground">
-                                        Ad
-                                    </label>
-                                    <input
-                                        value={row.name}
-                                        onChange={(e) =>
-                                            setExpenses((prev) =>
-                                                prev.map((r) =>
-                                                    r.id === row.id
-                                                        ? { ...r, name: e.target.value }
-                                                        : r
-                                                )
-                                            )
-                                        }
-                                        onBlur={() =>
-                                            void updateRow(row.id, {
-                                                name: row.name.trim() || 'Gider'
-                                            })
-                                        }
-                                        className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] text-muted-foreground">
-                                        Tutar
-                                    </label>
-                                    <input
-                                        value={String(row.amount)}
-                                        inputMode="decimal"
-                                        onChange={(e) =>
-                                            setExpenses((prev) =>
-                                                prev.map((r) =>
-                                                    r.id === row.id
-                                                        ? {
-                                                              ...r,
-                                                              amount: parseMoney(
-                                                                  e.target.value
-                                                              )
-                                                          }
-                                                        : r
-                                                )
-                                            )
-                                        }
-                                        onBlur={() =>
-                                            void updateRow(row.id, { amount: row.amount })
-                                        }
-                                        className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] text-muted-foreground">
-                                        Son ödeme
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={row.due_date ?? ''}
-                                        onChange={(e) => {
-                                            const v = e.target.value || null;
-                                            setExpenses((prev) =>
-                                                prev.map((r) =>
-                                                    r.id === row.id
-                                                        ? { ...r, due_date: v }
-                                                        : r
-                                                )
-                                            );
-                                            void updateRow(row.id, { due_date: v });
-                                        }}
-                                        className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                                    />
-                                </div>
-                                <div className="flex flex-wrap items-end justify-between gap-2 pb-1">
-                                    <div className="flex flex-wrap gap-3">
-                                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                            <input
-                                                type="checkbox"
-                                                checked={row.is_paid}
-                                                onChange={(e) => {
-                                                    const v = e.target.checked;
-                                                    setExpenses((prev) =>
-                                                        prev.map((r) =>
-                                                            r.id === row.id
-                                                                ? { ...r, is_paid: v }
-                                                                : r
-                                                        )
-                                                    );
-                                                    void updateRow(row.id, {
-                                                        is_paid: v
-                                                    });
-                                                }}
-                                            />
-                                            Ödendi
+                    {expenses.map((row) => {
+                        const left = expenseRemaining(row.amount, row.paid_amount);
+                        const fully = expenseIsFullyPaid(row.amount, row.paid_amount);
+                        return (
+                            <li
+                                key={row.id}
+                                className={`rounded-lg border bg-background p-3 space-y-2 ${
+                                    fully ? 'border-border opacity-80' : 'border-border'
+                                }`}
+                            >
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Ad
                                         </label>
-                                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                            <input
-                                                type="checkbox"
-                                                checked={row.repeats_monthly}
-                                                onChange={(e) => {
-                                                    const v = e.target.checked;
-                                                    setExpenses((prev) =>
-                                                        prev.map((r) =>
-                                                            r.id === row.id
-                                                                ? {
-                                                                      ...r,
-                                                                      repeats_monthly: v
-                                                                  }
-                                                                : r
-                                                        )
-                                                    );
-                                                    void updateRow(row.id, {
-                                                        repeats_monthly: v
-                                                    });
-                                                }}
-                                            />
-                                            Tekrarla (her ay)
-                                        </label>
+                                        <input
+                                            value={row.name}
+                                            onChange={(e) =>
+                                                setExpenses((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? { ...r, name: e.target.value }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                void updateRow(row.id, {
+                                                    name: row.name.trim() || 'Gider'
+                                                })
+                                            }
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                        />
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void removeRow(row.id)}
-                                        className="p-1.5 text-muted-foreground hover:text-red-400"
-                                        aria-label="Sil"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Tutar
+                                        </label>
+                                        <input
+                                            value={String(row.amount)}
+                                            inputMode="decimal"
+                                            onChange={(e) =>
+                                                setExpenses((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? {
+                                                                  ...r,
+                                                                  amount: parseMoney(
+                                                                      e.target.value
+                                                                  )
+                                                              }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                persistAmountPaid(
+                                                    row,
+                                                    row.amount,
+                                                    row.paid_amount
+                                                )
+                                            }
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Ödenen
+                                        </label>
+                                        <input
+                                            value={String(row.paid_amount)}
+                                            inputMode="decimal"
+                                            onChange={(e) =>
+                                                setExpenses((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? {
+                                                                  ...r,
+                                                                  paid_amount: parseMoney(
+                                                                      e.target.value
+                                                                  )
+                                                              }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                persistAmountPaid(
+                                                    row,
+                                                    row.amount,
+                                                    row.paid_amount
+                                                )
+                                            }
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Kalan
+                                        </label>
+                                        <p
+                                            className={`rounded-md border border-border/60 bg-secondary/20 px-2 py-1.5 text-sm tabular-nums ${
+                                                left > 0
+                                                    ? 'text-amber-700 dark:text-amber-300'
+                                                    : 'text-muted-foreground'
+                                            }`}
+                                        >
+                                            {fmtMoney(left)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Son ödeme
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={row.due_date ?? ''}
+                                            onChange={(e) => {
+                                                const v = e.target.value || null;
+                                                setExpenses((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? { ...r, due_date: v }
+                                                            : r
+                                                    )
+                                                );
+                                                void updateRow(row.id, { due_date: v });
+                                            }}
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap items-end justify-between gap-2 pb-1">
+                                        <div className="flex flex-wrap gap-3">
+                                            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={fully}
+                                                    onChange={(e) => {
+                                                        const v = e.target.checked;
+                                                        const paid = v ? row.amount : 0;
+                                                        persistAmountPaid(
+                                                            row,
+                                                            row.amount,
+                                                            paid
+                                                        );
+                                                    }}
+                                                />
+                                                Ödendi
+                                            </label>
+                                            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.repeats_monthly}
+                                                    onChange={(e) => {
+                                                        const v = e.target.checked;
+                                                        setExpenses((prev) =>
+                                                            prev.map((r) =>
+                                                                r.id === row.id
+                                                                    ? {
+                                                                          ...r,
+                                                                          repeats_monthly: v
+                                                                      }
+                                                                    : r
+                                                            )
+                                                        );
+                                                        void updateRow(row.id, {
+                                                            repeats_monthly: v
+                                                        });
+                                                    }}
+                                                />
+                                                Tekrarla
+                                            </label>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => void removeRow(row.id)}
+                                            className="p-1.5 text-muted-foreground hover:text-red-400"
+                                            aria-label="Sil"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        </li>
-                    ))}
+                                {row.paid_amount > 0 && left > 0 && (
+                                    <p className="text-[11px] text-muted-foreground tabular-nums">
+                                        {fmtMoney(row.amount)} borç · {fmtMoney(row.paid_amount)}{' '}
+                                        ödendi · {fmtMoney(left)} kaldı
+                                    </p>
+                                )}
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
 
             <div className="rounded-lg border border-dashed border-border p-4 space-y-3">
                 <h2 className="text-sm font-semibold">Gider ekle</h2>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <div>
                         <label className="text-[10px] text-muted-foreground">Ad</label>
                         <input
                             value={draftName}
                             onChange={(e) => setDraftName(e.target.value)}
-                            placeholder="Kira, fatura, market…"
+                            placeholder="Kira, fatura, borç…"
                             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
                         />
                     </div>
@@ -486,7 +594,17 @@ export default function PersonalExpensesPage() {
                             value={draftAmount}
                             onChange={(e) => setDraftAmount(e.target.value)}
                             inputMode="decimal"
-                            placeholder="0"
+                            placeholder="4000"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] text-muted-foreground">Ödenen</label>
+                        <input
+                            value={draftPaidAmount}
+                            onChange={(e) => setDraftPaidAmount(e.target.value)}
+                            inputMode="decimal"
+                            placeholder="2500"
                             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
                         />
                     </div>
@@ -503,14 +621,6 @@ export default function PersonalExpensesPage() {
                         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                             <input
                                 type="checkbox"
-                                checked={draftPaid}
-                                onChange={(e) => setDraftPaid(e.target.checked)}
-                            />
-                            Ödendi
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <input
-                                type="checkbox"
                                 checked={draftRepeat}
                                 onChange={(e) => setDraftRepeat(e.target.checked)}
                             />
@@ -518,6 +628,24 @@ export default function PersonalExpensesPage() {
                         </label>
                     </div>
                 </div>
+                {draftAmt > 0 && (
+                    <p className="text-[11px] text-muted-foreground tabular-nums">
+                        Kalan:{' '}
+                        <span className="text-amber-700 dark:text-amber-300 font-medium">
+                            {fmtMoney(draftLeft)}
+                        </span>
+                        {parseMoney(draftPaidAmount) > 0 && (
+                            <>
+                                {' '}
+                                ({fmtMoney(draftAmt)} −{' '}
+                                {fmtMoney(
+                                    Math.min(parseMoney(draftPaidAmount), draftAmt)
+                                )}
+                                )
+                            </>
+                        )}
+                    </p>
+                )}
                 <button
                     type="button"
                     disabled={busy}

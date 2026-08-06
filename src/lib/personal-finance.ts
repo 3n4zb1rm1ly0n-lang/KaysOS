@@ -117,12 +117,21 @@ export type PersonalExpenseRow = {
     month: number;
     name: string;
     amount: number;
+    paid_amount: number;
     due_date: string | null;
     is_paid: boolean;
     repeats_monthly: boolean;
     note: string;
     sort_order: number;
 };
+
+export function expenseRemaining(amount: number, paidAmount: number): number {
+    return Math.max(0, parseMoney(amount) - parseMoney(paidAmount));
+}
+
+export function expenseIsFullyPaid(amount: number, paidAmount: number): boolean {
+    return expenseRemaining(amount, paidAmount) <= 0.005 && parseMoney(amount) > 0;
+}
 
 export function mapIncome(r: Record<string, unknown>): PersonalIncomeRow {
     return {
@@ -144,14 +153,22 @@ export function mapIncome(r: Record<string, unknown>): PersonalIncomeRow {
 }
 
 export function mapExpense(r: Record<string, unknown>): PersonalExpenseRow {
+    const amount = parseMoney(r.amount as string | number);
+    let paid_amount = parseMoney(r.paid_amount as string | number);
+    const is_paid = Boolean(r.is_paid);
+    // Eski kayıt: ödendi ama paid_amount yok → tam ödenmiş
+    if (is_paid && paid_amount <= 0 && amount > 0 && r.paid_amount == null) {
+        paid_amount = amount;
+    }
     return {
         id: String(r.id),
         year: Number(r.year),
         month: Number(r.month),
         name: String(r.name ?? ''),
-        amount: parseMoney(r.amount as string | number),
+        amount,
+        paid_amount,
         due_date: r.due_date ? String(r.due_date).slice(0, 10) : null,
-        is_paid: Boolean(r.is_paid),
+        is_paid: is_paid || expenseIsFullyPaid(amount, paid_amount),
         repeats_monthly: Boolean(r.repeats_monthly),
         note: String(r.note ?? ''),
         sort_order: Number(r.sort_order) || 0

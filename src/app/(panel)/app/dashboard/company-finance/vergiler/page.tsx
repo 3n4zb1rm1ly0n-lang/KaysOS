@@ -96,55 +96,65 @@ export default function TaxesPage() {
         const expensesByEntry: Record<string, ExpenseRow[]> = {};
 
         if (entryIds.length > 0) {
-            const expRes = await supabase
+            let expRows: Array<{
+                monthly_entry_id: string;
+                name: unknown;
+                amount_gross: unknown;
+                kdv_rate: unknown;
+                include_in_deductible_kdv: unknown;
+                include_in_cash_flow?: unknown;
+                source?: unknown;
+            }> = [];
+
+            const full = await supabase
                 .from('company_finance_monthly_expenses')
                 .select(
                     'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv, include_in_cash_flow, source'
                 )
                 .in('monthly_entry_id', entryIds);
-            const msg = expRes.error?.message ?? '';
-            if (
-                expRes.error &&
-                !msg.includes('source') &&
-                !msg.includes('include_in_cash_flow')
-            ) {
-                setError(expRes.error.message);
-                setLoading(false);
-                return;
-            }
-            let rows = expRes.data as
-                | Array<Record<string, unknown>>
-                | null
-                | undefined;
-            if (expRes.error) {
-                const cols = [
-                    'monthly_entry_id',
-                    'name',
-                    'amount_gross',
-                    'kdv_rate',
-                    'include_in_deductible_kdv'
-                ];
-                if (!msg.includes('source')) cols.push('source');
-                if (!msg.includes('include_in_cash_flow')) cols.push('include_in_cash_flow');
-                const retry = await supabase
+
+            if (!full.error && full.data) {
+                expRows = full.data;
+            } else {
+                const msg = full.error?.message ?? '';
+                const withSource = await supabase
                     .from('company_finance_monthly_expenses')
-                    .select(cols.join(', '))
+                    .select(
+                        'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv, source'
+                    )
                     .in('monthly_entry_id', entryIds);
-                if (retry.error) {
-                    setError(retry.error.message);
-                    setLoading(false);
-                    return;
+
+                if (!withSource.error && withSource.data) {
+                    expRows = withSource.data.map((r) => ({
+                        ...r,
+                        include_in_cash_flow: true
+                    }));
+                } else {
+                    const basic = await supabase
+                        .from('company_finance_monthly_expenses')
+                        .select(
+                            'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv'
+                        )
+                        .in('monthly_entry_id', entryIds);
+                    if (basic.error) {
+                        setError(
+                            msg.includes('include_in_cash_flow') || msg.includes('source')
+                                ? basic.error.message
+                                : full.error?.message || basic.error.message
+                        );
+                        setLoading(false);
+                        return;
+                    }
+                    expRows = (basic.data ?? []).map((r) => ({
+                        ...r,
+                        source: '',
+                        include_in_cash_flow: true
+                    }));
                 }
-                rows = (retry.data ?? []).map((r) => ({
-                    ...r,
-                    source: (r as { source?: string }).source ?? '',
-                    include_in_cash_flow:
-                        (r as { include_in_cash_flow?: boolean }).include_in_cash_flow !==
-                        false
-                }));
             }
-            for (const row of rows ?? []) {
-                const eid = row.monthly_entry_id as string;
+
+            for (const row of expRows) {
+                const eid = String(row.monthly_entry_id);
                 if (!expensesByEntry[eid]) expensesByEntry[eid] = [];
                 expensesByEntry[eid].push({
                     name: String(row.name ?? ''),

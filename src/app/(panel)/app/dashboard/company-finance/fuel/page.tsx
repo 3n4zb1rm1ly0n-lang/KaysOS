@@ -324,6 +324,7 @@ export default function FuelPage() {
             amount_gross: summary.totalAmount,
             kdv_rate: FUEL_EXPENSE_KDV_RATE,
             include_in_deductible_kdv: false,
+            include_in_cash_flow: true,
             note: noteText,
             source: FUEL_EXPENSE_SOURCE,
             sort_order: 0

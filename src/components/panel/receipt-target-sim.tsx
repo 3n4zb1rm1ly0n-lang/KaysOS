@@ -41,11 +41,24 @@ export type ReceiptSimEmbed = {
     expenseDeductibleKdv: number;
 };
 
-export type ReceiptTargetSimProps = {
-    embed?: ReceiptSimEmbed;
+export type ReceiptApplyExpense = {
+    name: string;
+    amountGross: number;
+    kdvRate: number;
+    includeInCashFlow: boolean;
+    note?: string;
 };
 
-export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
+export type ReceiptTargetSimProps = {
+    embed?: ReceiptSimEmbed;
+    /** Embed’de sonuç → aylık gider tablosuna aktar */
+    onApplyExpense?: (payload: ReceiptApplyExpense) => void;
+};
+
+export function ReceiptTargetSim({
+    embed,
+    onApplyExpense
+}: ReceiptTargetSimProps = {}) {
     const now = new Date();
     const embedded = Boolean(embed);
     const [source, setSource] = useState<SourceMode>(embedded ? 'monthly' : 'manual');
@@ -69,6 +82,7 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
     const [brackets, setBrackets] = useState<TaxBracket[]>(DEFAULT_2026_BRACKETS);
     /** Embed’de brüt formdan koptuysa true */
     const [grossDirty, setGrossDirty] = useState(false);
+    const [applyAsk, setApplyAsk] = useState(false);
 
     const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
 
@@ -640,6 +654,74 @@ export function ReceiptTargetSim({ embed }: ReceiptTargetSimProps = {}) {
                                     </dd>
                                 </div>
                             </dl>
+                            {embedded &&
+                                onApplyExpense &&
+                                result.receiptsNeeded > 0.005 && (
+                                    <div className="pt-2 border-t border-border/50 space-y-2">
+                                        {!applyAsk ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setApplyAsk(true)}
+                                                className="w-full sm:w-auto text-sm font-medium rounded-md bg-primary text-primary-foreground px-3 py-2 hover:opacity-90"
+                                            >
+                                                Tabloya geçir
+                                            </button>
+                                        ) : (
+                                            <div className="rounded-md border border-border bg-background p-3 space-y-2">
+                                                <p className="text-sm font-medium">
+                                                    Nakit akışına dahil edilsin mi?
+                                                </p>
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    Öneri: hayır — vergi/matrah düşer, aylık nakit
+                                                    değişmez.
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onApplyExpense({
+                                                                name: `Fiş hedefi %${expenseRate}`,
+                                                                amountGross:
+                                                                    result.receiptsNeeded,
+                                                                kdvRate: expenseRate,
+                                                                includeInCashFlow: false,
+                                                                note: `Simülasyon: KDV ${fmtMoney(result.deductibleVatFromReceipts)}`
+                                                            });
+                                                            setApplyAsk(false);
+                                                        }}
+                                                        className="text-sm font-medium rounded-md bg-primary text-primary-foreground px-3 py-1.5 hover:opacity-90"
+                                                    >
+                                                        Hayır — yalnız vergi
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onApplyExpense({
+                                                                name: `Fiş hedefi %${expenseRate}`,
+                                                                amountGross:
+                                                                    result.receiptsNeeded,
+                                                                kdvRate: expenseRate,
+                                                                includeInCashFlow: true,
+                                                                note: `Simülasyon: KDV ${fmtMoney(result.deductibleVatFromReceipts)}`
+                                                            });
+                                                            setApplyAsk(false);
+                                                        }}
+                                                        className="text-sm rounded-md border border-border px-3 py-1.5 hover:bg-secondary"
+                                                    >
+                                                        Evet — nakit de düş
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setApplyAsk(false)}
+                                                        className="text-sm text-muted-foreground px-2 py-1.5 hover:underline"
+                                                    >
+                                                        Vazgeç
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                         </>
                     )}
                 </div>

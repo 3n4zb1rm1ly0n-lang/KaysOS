@@ -35,7 +35,9 @@ create table if not exists company_finance_monthly_expenses (
   note text not null default '',
   sort_order integer not null default 0,
   -- Örn. fuel = Benzin sayfasından aktarılan (KDV’siz net gider)
-  source text not null default ''
+  source text not null default '',
+  -- false = vergi/matrah için gider, nakit (aylık net) hesabına girmez
+  include_in_cash_flow boolean not null default true
 );
 
 create index if not exists company_finance_monthly_expenses_entry_idx

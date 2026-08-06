@@ -40,6 +40,7 @@ type ExpenseRow = {
     amount_gross: number;
     kdv_rate: number;
     include_in_deductible_kdv: boolean;
+    include_in_cash_flow: boolean;
     source: string;
 };
 
@@ -98,29 +99,49 @@ export default function TaxesPage() {
             const expRes = await supabase
                 .from('company_finance_monthly_expenses')
                 .select(
-                    'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv, source'
+                    'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv, include_in_cash_flow, source'
                 )
                 .in('monthly_entry_id', entryIds);
-            if (expRes.error && !expRes.error.message.includes('source')) {
+            const msg = expRes.error?.message ?? '';
+            if (
+                expRes.error &&
+                !msg.includes('source') &&
+                !msg.includes('include_in_cash_flow')
+            ) {
                 setError(expRes.error.message);
                 setLoading(false);
                 return;
             }
-            // source kolonu yoksa source olmadan tekrar dene
-            let rows = expRes.data;
-            if (expRes.error?.message.includes('source')) {
+            let rows = expRes.data as
+                | Array<Record<string, unknown>>
+                | null
+                | undefined;
+            if (expRes.error) {
+                const cols = [
+                    'monthly_entry_id',
+                    'name',
+                    'amount_gross',
+                    'kdv_rate',
+                    'include_in_deductible_kdv'
+                ];
+                if (!msg.includes('source')) cols.push('source');
+                if (!msg.includes('include_in_cash_flow')) cols.push('include_in_cash_flow');
                 const retry = await supabase
                     .from('company_finance_monthly_expenses')
-                    .select(
-                        'monthly_entry_id, name, amount_gross, kdv_rate, include_in_deductible_kdv'
-                    )
+                    .select(cols.join(', '))
                     .in('monthly_entry_id', entryIds);
                 if (retry.error) {
                     setError(retry.error.message);
                     setLoading(false);
                     return;
                 }
-                rows = (retry.data ?? []).map((r) => ({ ...r, source: '' }));
+                rows = (retry.data ?? []).map((r) => ({
+                    ...r,
+                    source: (r as { source?: string }).source ?? '',
+                    include_in_cash_flow:
+                        (r as { include_in_cash_flow?: boolean }).include_in_cash_flow !==
+                        false
+                }));
             }
             for (const row of rows ?? []) {
                 const eid = row.monthly_entry_id as string;
@@ -130,6 +151,7 @@ export default function TaxesPage() {
                     amount_gross: parseMoney(row.amount_gross),
                     kdv_rate: parseMoney(row.kdv_rate),
                     include_in_deductible_kdv: row.include_in_deductible_kdv !== false,
+                    include_in_cash_flow: row.include_in_cash_flow !== false,
                     source: row.source ? String(row.source) : ''
                 });
             }
@@ -175,11 +197,13 @@ export default function TaxesPage() {
             const gross = parseMoney(e.gross_amount);
             const sales = salesFromGrossInclusive(gross, SALES_VAT_RATE);
             let expenseNetTotal = 0;
+            let expenseCashNet = 0;
             let expenseKdvIncluded = 0;
             let taxExpenseNet = 0;
             for (const ex of expenses) {
                 const bd = expenseBreakdown(ex.amount_gross, ex.kdv_rate);
                 expenseNetTotal += bd.amountNet;
+                if (ex.include_in_cash_flow) expenseCashNet += bd.amountNet;
                 if (ex.include_in_deductible_kdv) expenseKdvIncluded += bd.kdvAmount;
                 if (isTaxLikeExpenseName(ex.name, ex.source)) {
                     taxExpenseNet += bd.amountNet;
@@ -207,7 +231,7 @@ export default function TaxesPage() {
                 cashNet: monthlyCashNet(
                     sales.netRevenue,
                     sales.tevfikat,
-                    expenseNetTotal
+                    expenseCashNet
                 )
             };
         });

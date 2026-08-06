@@ -49,6 +49,8 @@ type ExpenseDraft = {
     amountGross: string;
     kdvRate: string;
     includeInDeductibleKdv: boolean;
+    /** true = aylık net (nakit) formülüne dahil */
+    includeInCashFlow: boolean;
     note: string;
     /** Örn. fuel — Benzin sayfasından aktarılan */
     source?: string;
@@ -105,6 +107,7 @@ function emptyExpense(rate = 20): ExpenseDraft {
         amountGross: '',
         kdvRate: String(rate),
         includeInDeductibleKdv: true,
+        includeInCashFlow: true,
         note: ''
     };
 }
@@ -237,6 +240,7 @@ export default function MonthlyRevenuePage() {
                         row.amount_gross != null ? String(row.amount_gross) : '',
                     kdvRate: row.kdv_rate != null ? String(row.kdv_rate) : '20',
                     includeInDeductibleKdv: row.include_in_deductible_kdv !== false,
+                    includeInCashFlow: row.include_in_cash_flow !== false,
                     note: (row.note as string) || '',
                     source: row.source ? String(row.source) : ''
                 });
@@ -315,6 +319,9 @@ export default function MonthlyRevenuePage() {
                 return { ...ex, ...bd };
             });
             const expenseNetTotal = expenseRows.reduce((a, r) => a + r.amountNet, 0);
+            const expenseCashNet = expenseRows
+                .filter((r) => r.includeInCashFlow)
+                .reduce((a, r) => a + r.amountNet, 0);
             const expenseKdvIncluded = expenseRows
                 .filter((r) => r.includeInDeductibleKdv)
                 .reduce((a, r) => a + r.kdvAmount, 0);
@@ -326,6 +333,9 @@ export default function MonthlyRevenuePage() {
             const kdvBalance = sales.salesVat - totalDeductible - kdvPaid;
 
             const base = future && !hasRecord ? 0 : monthlyTaxableBase(sales.netRevenue, expenseNetTotal);
+            const cashNet = future && !hasRecord
+                ? 0
+                : sales.netRevenue - sales.tevfikat - expenseCashNet;
 
             return {
                 idx,
@@ -335,6 +345,8 @@ export default function MonthlyRevenuePage() {
                 ...sales,
                 expenseRows,
                 expenseNetTotal,
+                expenseCashNet,
+                cashNet,
                 expenseKdvIncluded,
                 expenseKdvAll,
                 kdvPaid,
@@ -426,6 +438,41 @@ export default function MonthlyRevenuePage() {
                       }
                     : m
             )
+        );
+    };
+
+    const addExpenseFromSim = (
+        monthIdx: number,
+        payload: {
+            name: string;
+            amountGross: number;
+            kdvRate: number;
+            includeInCashFlow: boolean;
+            note?: string;
+        }
+    ) => {
+        const ex: ExpenseDraft = {
+            localId: crypto.randomUUID(),
+            dbId: null,
+            name: payload.name,
+            amountGross: String(Math.round(payload.amountGross * 100) / 100),
+            kdvRate: String(payload.kdvRate),
+            includeInDeductibleKdv: payload.kdvRate > 0,
+            includeInCashFlow: payload.includeInCashFlow,
+            note: payload.note ?? '',
+            source: 'receipt_sim'
+        };
+        setMonths((prev) =>
+            prev.map((m, i) =>
+                i === monthIdx
+                    ? { ...m, dirty: true, expenses: [...m.expenses, ex] }
+                    : m
+            )
+        );
+        setStatus(
+            payload.includeInCashFlow
+                ? 'Fiş gideri tabloya eklendi (nakit + vergi). Kaydetmeyi unutma.'
+                : 'Fiş gideri tabloya eklendi (yalnızca vergi/matrah; nakit dışı). Kaydetmeyi unutma.'
         );
     };
 
@@ -522,6 +569,7 @@ export default function MonthlyRevenuePage() {
                 amount_gross: parseMoney(ex.amountGross),
                 kdv_rate: parseMoney(ex.kdvRate),
                 include_in_deductible_kdv: ex.includeInDeductibleKdv,
+                include_in_cash_flow: ex.includeInCashFlow,
                 note: ex.note.trim(),
                 sort_order: i,
                 source: ex.source?.trim() || ''
@@ -532,7 +580,11 @@ export default function MonthlyRevenuePage() {
                     .update(row)
                     .eq('id', ex.dbId);
                 if (uErr) {
-                    setError(uErr.message);
+                    setError(
+                        uErr.message.includes('include_in_cash_flow')
+                            ? 'Nakit alanı eksik. Supabase’de add_expense_cash_flow.sql çalıştır.'
+                            : uErr.message
+                    );
                     setSavingMonth(null);
                     return;
                 }
@@ -544,7 +596,11 @@ export default function MonthlyRevenuePage() {
                     .select('id')
                     .single();
                 if (cErr || !created) {
-                    setError(cErr?.message || 'Gider kaydı başarısız');
+                    setError(
+                        cErr?.message?.includes('include_in_cash_flow')
+                            ? 'Nakit alanı eksik. Supabase’de add_expense_cash_flow.sql çalıştır.'
+                            : cErr?.message || 'Gider kaydı başarısız'
+                    );
                     setSavingMonth(null);
                     return;
                 }
@@ -1346,6 +1402,9 @@ export default function MonthlyRevenuePage() {
                                                         expenseNet: r.expenseNetTotal,
                                                         expenseDeductibleKdv: r.expenseKdvIncluded
                                                     }}
+                                                    onApplyExpense={(payload) =>
+                                                        addExpenseFromSim(r.idx, payload)
+                                                    }
                                                 />
                                             )}
 
@@ -1372,6 +1431,17 @@ export default function MonthlyRevenuePage() {
                                                                             {ex.source === 'fuel' && (
                                                                                 <span className="ml-1 text-primary">
                                                                                     · Benzin sayfası
+                                                                                </span>
+                                                                            )}
+                                                                            {ex.source ===
+                                                                                'receipt_sim' && (
+                                                                                <span className="ml-1 text-primary">
+                                                                                    · Fiş önerisi
+                                                                                </span>
+                                                                            )}
+                                                                            {!ex.includeInCashFlow && (
+                                                                                <span className="ml-1 text-amber-600 dark:text-amber-400">
+                                                                                    · Nakit dışı
                                                                                 </span>
                                                                             )}
                                                                         </label>
@@ -1483,28 +1553,51 @@ export default function MonthlyRevenuePage() {
                                                                             )}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex items-end justify-between gap-2">
-                                                                        <label className="flex items-center gap-2 text-xs text-muted-foreground pb-1.5">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={
-                                                                                    ex.includeInDeductibleKdv
-                                                                                }
-                                                                                onChange={(e) =>
-                                                                                    updateExpense(
-                                                                                        r.idx,
-                                                                                        ex.localId,
-                                                                                        {
-                                                                                            includeInDeductibleKdv:
-                                                                                                e
-                                                                                                    .target
-                                                                                                    .checked
-                                                                                        }
-                                                                                    )
-                                                                                }
-                                                                            />
-                                                                            İndirilecek KDV
-                                                                        </label>
+                                                                    <div className="flex flex-wrap items-end justify-between gap-2">
+                                                                        <div className="flex flex-wrap items-center gap-3 pb-1.5">
+                                                                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={
+                                                                                        ex.includeInDeductibleKdv
+                                                                                    }
+                                                                                    onChange={(e) =>
+                                                                                        updateExpense(
+                                                                                            r.idx,
+                                                                                            ex.localId,
+                                                                                            {
+                                                                                                includeInDeductibleKdv:
+                                                                                                    e
+                                                                                                        .target
+                                                                                                        .checked
+                                                                                            }
+                                                                                        )
+                                                                                    }
+                                                                                />
+                                                                                İndirilecek KDV
+                                                                            </label>
+                                                                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={
+                                                                                        ex.includeInCashFlow
+                                                                                    }
+                                                                                    onChange={(e) =>
+                                                                                        updateExpense(
+                                                                                            r.idx,
+                                                                                            ex.localId,
+                                                                                            {
+                                                                                                includeInCashFlow:
+                                                                                                    e
+                                                                                                        .target
+                                                                                                        .checked
+                                                                                            }
+                                                                                        )
+                                                                                    }
+                                                                                />
+                                                                                Nakit’e dahil
+                                                                            </label>
+                                                                        </div>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() =>
@@ -1563,12 +1656,24 @@ export default function MonthlyRevenuePage() {
                                                     </div>
                                                     <div className="flex justify-between gap-2">
                                                         <dt className="text-muted-foreground">
-                                                            Gider (net)
+                                                            Gider (matrah)
                                                         </dt>
                                                         <dd className="tabular-nums text-red-400">
                                                             −{fmtMoney(r.expenseNetTotal)}
                                                         </dd>
                                                     </div>
+                                                    {Math.abs(
+                                                        r.expenseCashNet - r.expenseNetTotal
+                                                    ) > 0.005 && (
+                                                        <div className="flex justify-between gap-2">
+                                                            <dt className="text-muted-foreground">
+                                                                Gider (nakit)
+                                                            </dt>
+                                                            <dd className="tabular-nums text-red-400">
+                                                                −{fmtMoney(r.expenseCashNet)}
+                                                            </dd>
+                                                        </div>
+                                                    )}
                                                     <div className="flex justify-between gap-2 pt-1.5 border-t border-border">
                                                         <dt className="text-muted-foreground">
                                                             Aylık matrah
@@ -1582,17 +1687,13 @@ export default function MonthlyRevenuePage() {
                                                             Aylık net (nakit)
                                                         </dt>
                                                         <dd className="font-semibold tabular-nums text-primary">
-                                                            {fmtMoney(
-                                                                r.netRevenue -
-                                                                    r.tevfikat -
-                                                                    r.expenseNetTotal
-                                                            )}
+                                                            {fmtMoney(r.cashNet)}
                                                         </dd>
                                                     </div>
                                                 </dl>
                                                 <p className="text-[10px] text-muted-foreground">
-                                                    Nakit = net ciro − tevfikat − gider · Matrah =
-                                                    net ciro − gider (GV tabanı)
+                                                    Matrah = net ciro − tüm gider · Nakit = net
+                                                    ciro − tevfikat − nakit’e dahil giderler
                                                 </p>
                                             </div>
 

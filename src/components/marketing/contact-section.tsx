@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { SiteContent } from '@/lib/marketing-types';
+import { Reveal } from '@/components/marketing/motion';
 
 export function ContactSection({ content }: { content: SiteContent }) {
     const emailDisplay = content.contact_email || 'hello@kaysia.co';
@@ -69,26 +70,35 @@ export function ContactSection({ content }: { content: SiteContent }) {
     return (
         <section id="iletisim" className="scroll-mt-20 border-t border-white/5 py-24 md:py-32">
             <div className="mx-auto max-w-6xl px-5 md:px-8">
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]">
-                    İletişim
-                </p>
-                <h2 className="font-display mt-4 max-w-xl text-3xl text-white md:text-4xl">
-                    Birlikte bir şey inşa edelim
-                </h2>
-                <p className="mt-5 max-w-md text-[#9CA3AF]">
-                    {content.contact_note ||
-                        'Yeni bir ürün veya yenileme mi düşünüyorsunuz? Kısa bir not bırakın.'}
-                </p>
-                <p className="mt-3 text-sm text-[#6B7280]">
-                    Doğrudan yazmak isterseniz:{' '}
-                    <a
-                        href={`mailto:${emailDisplay}`}
-                        className="text-[#9CA3AF] underline-offset-2 hover:text-white hover:underline"
-                    >
-                        {emailDisplay}
-                    </a>
-                </p>
+                <Reveal>
+                    <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]">
+                        İletişim
+                    </p>
+                </Reveal>
+                <Reveal delay={0.06}>
+                    <h2 className="font-display mt-4 max-w-xl text-3xl text-white md:text-4xl">
+                        Birlikte bir şey inşa edelim
+                    </h2>
+                </Reveal>
+                <Reveal delay={0.12}>
+                    <p className="mt-5 max-w-md text-[#9CA3AF]">
+                        {content.contact_note ||
+                            'Yeni bir ürün veya yenileme mi düşünüyorsunuz? Kısa bir not bırakın.'}
+                    </p>
+                </Reveal>
+                <Reveal delay={0.16}>
+                    <p className="mt-3 text-sm text-[#6B7280]">
+                        Doğrudan yazmak isterseniz:{' '}
+                        <a
+                            href={`mailto:${emailDisplay}`}
+                            className="text-[#9CA3AF] underline-offset-2 hover:text-white hover:underline"
+                        >
+                            {emailDisplay}
+                        </a>
+                    </p>
+                </Reveal>
 
+                <Reveal delay={0.2}>
                 <form onSubmit={handleSubmit} className="mt-10 max-w-lg space-y-4">
                     <div>
                         <label htmlFor="contact-name" className="sr-only">
@@ -167,6 +177,7 @@ export function ContactSection({ content }: { content: SiteContent }) {
                         Mesaj gönder
                     </button>
                 </form>
+                </Reveal>
             </div>
         </section>
     );

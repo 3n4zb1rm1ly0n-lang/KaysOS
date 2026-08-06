@@ -2,12 +2,20 @@
 
 import { useEffect, useId, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { ShowcaseProject } from '@/lib/marketing-types';
 import { parseShowcaseGallery, parseShowcaseLinks } from '@/lib/marketing-types';
 import type { EcosystemItem } from '@/lib/ecosystem-types';
 import { ECOSYSTEM_KIND_LABELS, parseEcosystemLinks } from '@/lib/ecosystem-types';
 import { EcosystemIso } from '@/components/marketing/ecosystem-iso';
 import { ImageSlider } from '@/components/marketing/image-slider';
+import {
+    Reveal,
+    RevealGroup,
+    RevealItem,
+    scaleIn,
+    staggerFast
+} from '@/components/marketing/motion';
 
 function DetailModal({
     title,
@@ -30,6 +38,7 @@ function DetailModal({
 }) {
     const titleId = useId();
     const slides = gallery && gallery.length > 0 ? gallery : [];
+    const reduce = useReducedMotion();
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -45,11 +54,15 @@ function DetailModal({
     }, [onClose]);
 
     return (
-        <div
+        <motion.div
             className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduce ? undefined : { opacity: 0 }}
+            transition={{ duration: 0.22 }}
         >
             <button
                 type="button"
@@ -57,7 +70,13 @@ function DetailModal({
                 aria-label="Kapat"
                 onClick={onClose}
             />
-            <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0F1419] shadow-2xl sm:rounded-2xl">
+            <motion.div
+                className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0F1419] shadow-2xl sm:rounded-2xl"
+                initial={reduce ? false : { opacity: 0, y: 40, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reduce ? undefined : { opacity: 0, y: 24, scale: 0.98 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
                 {slides.length > 0 && (
                     <ImageSlider images={slides} alt={title} className="h-48 w-full shrink-0 sm:h-56" />
                 )}
@@ -130,8 +149,8 @@ function DetailModal({
                         <p className="text-sm text-[#6B7280]">Detaylı açıklama henüz eklenmedi.</p>
                     )}
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 }
 
@@ -144,6 +163,7 @@ export function WorkShowcase({
 }) {
     const [ecoId, setEcoId] = useState<string | null>(null);
     const [projectId, setProjectId] = useState<string | null>(null);
+    const reduce = useReducedMotion();
 
     const ecoActive = ecosystem.find((i) => i.id === ecoId) ?? null;
     const projectActive = projects.find((p) => p.id === projectId) ?? null;
@@ -154,37 +174,43 @@ export function WorkShowcase({
 
     return (
         <>
-            <div className="mx-auto max-w-6xl px-5 md:px-8 mb-2">
+            <Reveal className="mx-auto mb-2 max-w-6xl px-5 md:px-8">
                 <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]/90">
                     Teknolojiler & partnerlikler
                 </p>
-            </div>
+            </Reveal>
 
             <EcosystemIso items={ecosystem} onSelectItem={setEcoId} />
 
-            <div className="mx-auto max-w-6xl px-5 md:px-8 mt-14 md:mt-16">
+            <Reveal className="mx-auto mt-14 max-w-6xl px-5 md:mt-16 md:px-8">
                 <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#1A9B8E]">
                     Projeler
                 </p>
                 <h3 className="font-display mt-3 text-2xl text-white md:text-3xl">
                     Seçilmiş işler
                 </h3>
-            </div>
+            </Reveal>
 
             {projects.length === 0 ? (
                 <p className="mx-auto mt-8 max-w-6xl px-5 text-sm text-[#6B7280] md:px-8">
                     Yakında burada seçilmiş projeler görünecek.
                 </p>
             ) : (
-                <ul className="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 md:gap-5 md:px-8 lg:grid-cols-3">
+                <RevealGroup
+                    className="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-4 px-5 sm:grid-cols-2 md:gap-5 md:px-8 lg:grid-cols-3"
+                    as="ul"
+                    variants={staggerFast}
+                >
                     {projects.map((p) => {
                         const gallery = parseShowcaseGallery(p.showcase_gallery);
                         return (
-                            <li key={p.id}>
-                                <button
+                            <RevealItem key={p.id} as="li" variants={scaleIn}>
+                                <motion.button
                                     type="button"
                                     onClick={() => setProjectId(p.id)}
                                     className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12171E] text-left transition hover:border-[#1A9B8E]/40 hover:bg-[#161C24]"
+                                    whileHover={reduce ? undefined : { y: -4 }}
+                                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                                 >
                                     <ImageSlider
                                         images={gallery}
@@ -218,37 +244,43 @@ export function WorkShowcase({
                                             Detayı aç →
                                         </span>
                                     </div>
-                                </button>
-                            </li>
+                                </motion.button>
+                            </RevealItem>
                         );
                     })}
-                </ul>
+                </RevealGroup>
             )}
 
-            {ecoActive && (
-                <DetailModal
-                    title={ecoActive.name}
-                    summary={ecoActive.summary}
-                    body={ecoActive.body}
-                    logoUrl={ecoActive.logo_url}
-                    links={parseEcosystemLinks(ecoActive.links)}
-                    badge={ECOSYSTEM_KIND_LABELS[ecoActive.kind]}
-                    onClose={() => setEcoId(null)}
-                />
-            )}
+            <AnimatePresence>
+                {ecoActive && (
+                    <DetailModal
+                        key={`eco-${ecoActive.id}`}
+                        title={ecoActive.name}
+                        summary={ecoActive.summary}
+                        body={ecoActive.body}
+                        logoUrl={ecoActive.logo_url}
+                        links={parseEcosystemLinks(ecoActive.links)}
+                        badge={ECOSYSTEM_KIND_LABELS[ecoActive.kind]}
+                        onClose={() => setEcoId(null)}
+                    />
+                )}
+            </AnimatePresence>
 
-            {projectActive && (
-                <DetailModal
-                    title={projectActive.title}
-                    summary={projectActive.showcase_summary}
-                    body={projectActive.showcase_body}
-                    logoUrl={projectActive.logo_url}
-                    gallery={parseShowcaseGallery(projectActive.showcase_gallery)}
-                    links={projectLinks}
-                    badge="Proje"
-                    onClose={() => setProjectId(null)}
-                />
-            )}
+            <AnimatePresence>
+                {projectActive && (
+                    <DetailModal
+                        key={`proj-${projectActive.id}`}
+                        title={projectActive.title}
+                        summary={projectActive.showcase_summary}
+                        body={projectActive.showcase_body}
+                        logoUrl={projectActive.logo_url}
+                        gallery={parseShowcaseGallery(projectActive.showcase_gallery)}
+                        links={projectLinks}
+                        badge="Proje"
+                        onClose={() => setProjectId(null)}
+                    />
+                )}
+            </AnimatePresence>
         </>
     );
 }

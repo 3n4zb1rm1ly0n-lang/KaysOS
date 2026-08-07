@@ -9,7 +9,21 @@ import {
 
 export const PF_INCOMES = 'personal_finance_incomes';
 export const PF_EXPENSES = 'personal_finance_expenses';
+export const PF_DEBTS = 'personal_finance_debts';
 export const COMPANY_SOURCE = 'company_cash';
+
+export const DEBT_TYPES = [
+    { value: 'credit_card', label: 'Kredi kartı' },
+    { value: 'loan', label: 'Kredi' },
+    { value: 'enforcement', label: 'İcra' },
+    { value: 'other', label: 'Diğer' }
+] as const;
+
+export type DebtType = (typeof DEBT_TYPES)[number]['value'];
+
+export function debtTypeLabel(type: string): string {
+    return DEBT_TYPES.find((t) => t.value === type)?.label ?? 'Diğer';
+}
 
 export function fmtMoney(n: number): string {
     return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -170,6 +184,42 @@ export function mapExpense(r: Record<string, unknown>): PersonalExpenseRow {
         due_date: r.due_date ? String(r.due_date).slice(0, 10) : null,
         is_paid: is_paid || expenseIsFullyPaid(amount, paid_amount),
         repeats_monthly: Boolean(r.repeats_monthly),
+        note: String(r.note ?? ''),
+        sort_order: Number(r.sort_order) || 0
+    };
+}
+
+export type PersonalDebtRow = {
+    id: string;
+    name: string;
+    debt_type: DebtType | string;
+    creditor: string;
+    amount: number;
+    paid_amount: number;
+    due_date: string | null;
+    is_paid: boolean;
+    note: string;
+    sort_order: number;
+};
+
+export function mapDebt(r: Record<string, unknown>): PersonalDebtRow {
+    const amount = parseMoney(r.amount as string | number);
+    let paid_amount = parseMoney(r.paid_amount as string | number);
+    const is_paid = Boolean(r.is_paid);
+    if (is_paid && paid_amount <= 0 && amount > 0 && r.paid_amount == null) {
+        paid_amount = amount;
+    }
+    const rawType = String(r.debt_type ?? 'other');
+    const debt_type = DEBT_TYPES.some((t) => t.value === rawType) ? rawType : 'other';
+    return {
+        id: String(r.id),
+        name: String(r.name ?? ''),
+        debt_type,
+        creditor: String(r.creditor ?? ''),
+        amount,
+        paid_amount,
+        due_date: r.due_date ? String(r.due_date).slice(0, 10) : null,
+        is_paid: is_paid || expenseIsFullyPaid(amount, paid_amount),
         note: String(r.note ?? ''),
         sort_order: Number(r.sort_order) || 0
     };

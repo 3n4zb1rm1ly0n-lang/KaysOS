@@ -24,7 +24,8 @@ import {
     FileText,
     UserRound,
     WalletCards,
-    CreditCard
+    CreditCard,
+    Scale
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -50,6 +51,12 @@ export const PERSONAL_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Giderler',
         href: '/app/dashboard/personal-finance/expenses',
         icon: CreditCard
+    },
+    {
+        id: 'pf-debts',
+        label: 'Borçlar',
+        href: '/app/dashboard/personal-finance/debts',
+        icon: Scale
     }
 ];
 

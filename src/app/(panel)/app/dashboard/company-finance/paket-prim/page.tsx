@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Package, Send } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Package, Send, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import {
     DAILY_FIXED,
@@ -86,6 +86,9 @@ export default function PaketPrimPage() {
     const [sendGross, setSendGross] = useState('');
     const [sendNote, setSendNote] = useState('');
     const [sending, setSending] = useState(false);
+    const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+    const [confirmStep, setConfirmStep] = useState<'ask' | 'edit'>('ask');
+    const [editedGross, setEditedGross] = useState('');
 
     const monthNum = monthIndex + 1;
     const monthClosed = Boolean(closing?.is_closed);
@@ -394,10 +397,10 @@ export default function PaketPrimPage() {
         setSending(false);
     }, [year, monthNum, closing]);
 
-    const confirmSendToMonthly = useCallback(async () => {
+    const confirmSendToMonthly = useCallback(async (grossOverride?: string) => {
         setSending(true);
         setError(null);
-        const gross = parseFloat(sendGross.replace(',', '.'));
+        const gross = parseFloat((grossOverride ?? sendGross).replace(',', '.'));
         if (!Number.isFinite(gross) || gross < 0) {
             setError('Geçerli bir brüt tutar gir.');
             setSending(false);
@@ -654,7 +657,11 @@ export default function PaketPrimPage() {
                         <button
                             type="button"
                             disabled={sending}
-                            onClick={() => void confirmSendToMonthly()}
+                            onClick={() => {
+                                setConfirmStep('ask');
+                                setEditedGross(sendGross);
+                                setConfirmModalOpen(true);
+                            }}
                             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                         >
                             {sending && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -671,6 +678,97 @@ export default function PaketPrimPage() {
                     </div>
                 </section>
             )}
+
+            {confirmModalOpen && (() => {
+                const calculated = summary.grandTotal;
+                const edited = parseFloat(editedGross.replace(',', '.'));
+                const diff = Number.isFinite(edited) ? edited - calculated : 0;
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModalOpen(false)}>
+                        <div className="relative w-full max-w-md mx-4 rounded-2xl border border-border bg-background p-6 shadow-xl space-y-5" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" onClick={() => setConfirmModalOpen(false)} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
+                                <X className="w-5 h-5" />
+                            </button>
+                            <h2 className="text-base font-semibold">Tutar doğrulama</h2>
+                            <div className="text-sm space-y-1">
+                                <div className="text-muted-foreground">Hesaplanan brüt toplam:</div>
+                                <div className="text-xl font-bold tabular-nums">{fmtMoney2(calculated)}</div>
+                            </div>
+
+                            {confirmStep === 'ask' ? (
+                                <div className="space-y-3">
+                                    <p className="text-sm">Bu tutar doğru mu?</p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={sending}
+                                            onClick={() => {
+                                                setConfirmModalOpen(false);
+                                                void confirmSendToMonthly(sendGross);
+                                            }}
+                                            className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                                        >
+                                            {sending && <Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />}
+                                            Evet, gönder
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setConfirmStep('edit');
+                                                setEditedGross(String(calculated));
+                                            }}
+                                            className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border border-border hover:bg-secondary/50"
+                                        >
+                                            Hayır, düzenle
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <label className="space-y-1">
+                                        <span className="text-xs text-muted-foreground">Gerçek brüt tutar</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={editedGross}
+                                            onChange={(e) => setEditedGross(e.target.value)}
+                                            className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                            autoFocus
+                                        />
+                                    </label>
+                                    {Number.isFinite(edited) && diff !== 0 && (
+                                        <div className={`text-sm font-medium tabular-nums ${diff > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                            Fark: {diff > 0 ? '+' : ''}{fmtMoney2(diff)}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={sending || !Number.isFinite(edited) || edited < 0}
+                                            onClick={() => {
+                                                setSendGross(editedGross);
+                                                setConfirmModalOpen(false);
+                                                void confirmSendToMonthly(editedGross);
+                                            }}
+                                            className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                                        >
+                                            {sending && <Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />}
+                                            Onayla ve gönder
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfirmStep('ask')}
+                                            className="px-4 py-2.5 text-sm rounded-lg border border-border hover:bg-secondary/50"
+                                        >
+                                            Geri
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
 
             {error && (
                 <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
@@ -1238,6 +1336,11 @@ function DayRow({
                         )}
                         {isWork && (
                             <div className="text-foreground/80">+ {fmtMoney(DAILY_FIXED)} sabit</div>
+                        )}
+                        {isWork && (
+                            <div className="font-semibold text-primary tabular-nums">
+                                Toplam: {fmtMoney(prim + DAILY_FIXED)}
+                            </div>
                         )}
                     </div>
                 </>

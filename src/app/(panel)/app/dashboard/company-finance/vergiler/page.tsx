@@ -420,6 +420,9 @@ export default function TaxesPage() {
                                         <th className="px-3 py-2 text-right font-medium">
                                             Nakit
                                         </th>
+                                        <th className="px-3 py-2 text-right font-medium">
+                                            Ödenecek tutar
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
@@ -443,7 +446,7 @@ export default function TaxesPage() {
                                                         {MONTH_NAMES_TR[m.month - 1]}
                                                     </td>
                                                     <td
-                                                        colSpan={9}
+                                                        colSpan={10}
                                                         className="px-3 py-2 text-xs"
                                                     >
                                                         Kayıt yok
@@ -484,6 +487,9 @@ export default function TaxesPage() {
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums text-primary">
                                                     {fmtMoney(m.cashNet)}
+                                                </td>
+                                                <td className="px-3 py-2 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                                    {fmtMoney(m.netRevenue + m.salesVat - m.tevfikat - m.expenseNetTotal)}
                                                 </td>
                                             </tr>
                                         );
@@ -527,6 +533,13 @@ export default function TaxesPage() {
                                         </td>
                                         <td className="px-3 py-2 text-right tabular-nums text-primary">
                                             {fmtMoney(totals.cashNet)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                            {fmtMoney(
+                                                months
+                                                    .filter((m) => m.hasRecord)
+                                                    .reduce((a, m) => a + m.netRevenue + m.salesVat - m.tevfikat - m.expenseNetTotal, 0)
+                                            )}
                                         </td>
                                     </tr>
                                 </tfoot>

@@ -1696,6 +1696,14 @@ export default function MonthlyRevenuePage() {
                                                             {fmtMoney(r.cashNet)}
                                                         </dd>
                                                     </div>
+                                                    <div className="flex justify-between gap-2 pt-1.5 border-t border-emerald-500/30">
+                                                        <dt className="font-semibold">
+                                                            Ödenecek tutar
+                                                        </dt>
+                                                        <dd className="font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                                            {fmtMoney(r.netRevenue + r.salesVat - r.tevfikat - r.expenseNetTotal)}
+                                                        </dd>
+                                                    </div>
                                                 </dl>
                                                 <p className="text-[10px] text-muted-foreground">
                                                     Matrah = net ciro − tüm gider · Nakit = net

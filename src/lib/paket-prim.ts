@@ -23,6 +23,7 @@ export const DAILY_FIXED = HOURLY_RATE * HOURS_PER_DAY; // 2.124 TL
 export const FULL_MONTH_WORK_DAYS = 26;
 /** Şirket rakamı (1 TL yuvarlama); hesapta günlük sabit kullanılır */
 export const COMPANY_FIXED_MONTHLY = 55_223;
+export const MONTHLY_FRANCHISE = 1_200;
 
 /** Migros Hemen günlük prim (daha düşük basamaklar) */
 export const HEMEN_DAILY_BRACKETS: PrimBracket[] = [
@@ -174,6 +175,8 @@ export type MonthSummary = {
     dailyPrimTotal: number;
     monthlyBonusAmount: number;
     grandTotal: number;
+    franchiseTotal: number;
+    dailyFranchise: number;
     nextDailyHint: { remaining: number; nextAmount: number; nextMin: number } | null;
     nextMonthly: { remaining: number; nextAmount: number; nextMin: number } | null;
     avgPackagesPerWorkDay: number;
@@ -204,6 +207,9 @@ export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
         ? nextDailyThreshold(lastWork.packages, lastWork.tip)
         : null;
 
+    const totalDaysInMonth = entries.length || 30;
+    const dailyFranchise = MONTHLY_FRANCHISE / totalDaysInMonth;
+
     return {
         workDays,
         leaveDays,
@@ -212,6 +218,8 @@ export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
         dailyPrimTotal,
         monthlyBonusAmount,
         grandTotal: fixedPay + dailyPrimTotal + monthlyBonusAmount,
+        franchiseTotal: MONTHLY_FRANCHISE,
+        dailyFranchise,
         nextDailyHint,
         nextMonthly: nextMonthlyThreshold(totalPackages),
         avgPackagesPerWorkDay: workDays > 0 ? totalPackages / workDays : 0

@@ -26,7 +26,8 @@ import {
     remainingWorkDaySlots,
     summarizeMonth,
     toDbPayload,
-    type ScenarioMode
+    type ScenarioMode,
+    MONTHLY_FRANCHISE
 } from '@/lib/paket-prim';
 
 const TABLE = 'company_finance_paket_prim_days';
@@ -409,7 +410,7 @@ export default function PaketPrimPage() {
 
         const note =
             sendNote.trim() ||
-            `Paket prim — ${MONTH_LABELS[monthIndex]} ${year}`;
+            `Paket prim — ${MONTH_LABELS[monthIndex]} ${year} (franchise kesintisi: ${fmtMoney2(summary.franchiseTotal)})`;
 
         // Mevcut aylık kayıt?
         const { data: existing, error: exErr } = await supabase
@@ -606,7 +607,7 @@ export default function PaketPrimPage() {
                     <h2 className="text-sm font-semibold">
                         {MONTH_LABELS[monthIndex]} {year} → Aylık kazanç (brüt)
                     </h2>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                         <div>
                             <div className="text-xs text-muted-foreground">Sabit</div>
                             <div className="font-medium tabular-nums">{fmtMoney2(summary.fixedPay)}</div>
@@ -621,6 +622,12 @@ export default function PaketPrimPage() {
                             <div className="text-xs text-muted-foreground">Aylık bonus</div>
                             <div className="font-medium tabular-nums">
                                 {fmtMoney2(summary.monthlyBonusAmount)}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground">Franchise kesintisi</div>
+                            <div className="font-medium tabular-nums text-red-500">
+                                −{fmtMoney2(summary.franchiseTotal)}
                             </div>
                         </div>
                         <div>
@@ -782,7 +789,7 @@ export default function PaketPrimPage() {
             )}
 
             {/* KPI */}
-            <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <Kpi
                     label="Sabit ücret"
                     value={fmtMoney(summary.fixedPay)}
@@ -803,6 +810,11 @@ export default function PaketPrimPage() {
                               ? 'En üst basamak'
                               : 'İlk eşik 700'
                     }
+                />
+                <Kpi
+                    label="Franchise kesintisi"
+                    value={`−${fmtMoney(summary.franchiseTotal)}`}
+                    hint={`Günlük ~${fmtMoney(Math.round(summary.dailyFranchise))}`}
                 />
                 <Kpi
                     label="Toplam kazanç"
@@ -997,6 +1009,7 @@ export default function PaketPrimPage() {
                                 leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
                                 locked={monthClosed}
+                                dailyFranchise={summary.dailyFranchise}
                                 onSaveWork={saveWorkDay}
                                 onLeave={() => void setLeave(entry.date)}
                                 onClear={() => void clearDay(entry.date)}
@@ -1208,6 +1221,7 @@ function DayRow({
     leaveAllowed,
     saving,
     locked,
+    dailyFranchise,
     onSaveWork,
     onLeave,
     onClear
@@ -1217,6 +1231,7 @@ function DayRow({
     leaveAllowed: boolean;
     saving: boolean;
     locked: boolean;
+    dailyFranchise: number;
     onSaveWork: (date: string, packages: number, tip: BonusTip) => void;
     onLeave: () => void;
     onClear: () => void;
@@ -1342,6 +1357,9 @@ function DayRow({
                                 Toplam: {fmtMoney(prim + DAILY_FIXED)}
                             </div>
                         )}
+                        <div className="text-red-500/80 tabular-nums">
+                            Franchise: −{fmtMoney(Math.round(dailyFranchise))}/gün
+                        </div>
                     </div>
                 </>
             )}

@@ -24,6 +24,7 @@ export const FULL_MONTH_WORK_DAYS = 26;
 /** Şirket rakamı (1 TL yuvarlama); hesapta günlük sabit kullanılır */
 export const COMPANY_FIXED_MONTHLY = 55_223;
 export const MONTHLY_FRANCHISE = 1_200;
+export const WORK_START_DATE = '2026-07-24';
 
 /** Migros Hemen günlük prim (daha düşük basamaklar) */
 export const HEMEN_DAILY_BRACKETS: PrimBracket[] = [
@@ -182,7 +183,7 @@ export type MonthSummary = {
     avgPackagesPerWorkDay: number;
 };
 
-export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
+export function summarizeMonth(entries: PackageDayEntry[], year?: number, month?: number): MonthSummary {
     let workDays = 0;
     let leaveDays = 0;
     let totalPackages = 0;
@@ -209,6 +210,18 @@ export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
 
     const totalDaysInMonth = entries.length || 30;
     const dailyFranchise = MONTHLY_FRANCHISE / totalDaysInMonth;
+    let franchiseDays = totalDaysInMonth;
+    if (year != null && month != null) {
+        const startDate = new Date(WORK_START_DATE);
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 0);
+        if (monthEnd < startDate) {
+            franchiseDays = 0;
+        } else if (monthStart < startDate) {
+            franchiseDays = monthEnd.getDate() - startDate.getDate() + 1;
+        }
+    }
+    const franchiseTotal = dailyFranchise * franchiseDays;
 
     return {
         workDays,
@@ -218,7 +231,7 @@ export function summarizeMonth(entries: PackageDayEntry[]): MonthSummary {
         dailyPrimTotal,
         monthlyBonusAmount,
         grandTotal: fixedPay + dailyPrimTotal + monthlyBonusAmount,
-        franchiseTotal: MONTHLY_FRANCHISE,
+        franchiseTotal,
         dailyFranchise,
         nextDailyHint,
         nextMonthly: nextMonthlyThreshold(totalPackages),

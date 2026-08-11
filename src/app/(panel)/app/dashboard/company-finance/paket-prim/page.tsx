@@ -195,7 +195,7 @@ export default function PaketPrimPage() {
         void loadMonth(year, monthIndex);
     }, [year, monthIndex, loadMonth]);
 
-    const summary = useMemo(() => summarizeMonth(entries), [entries]);
+    const summary = useMemo(() => summarizeMonth(entries, year, monthNum), [entries, year, monthNum]);
 
     const remainDays = useMemo(
         () => remainingWorkDaySlots(entries, todayStr()),

@@ -1032,7 +1032,6 @@ export default function PaketPrimPage() {
                                 leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
                                 locked={monthClosed}
-                                dailyFranchise={summary.dailyFranchise}
                                 onSaveWork={saveWorkDay}
                                 onLeave={() => void setLeave(entry.date)}
                                 onClear={() => void clearDay(entry.date)}
@@ -1244,7 +1243,6 @@ function DayRow({
     leaveAllowed,
     saving,
     locked,
-    dailyFranchise,
     onSaveWork,
     onLeave,
     onClear
@@ -1254,7 +1252,6 @@ function DayRow({
     leaveAllowed: boolean;
     saving: boolean;
     locked: boolean;
-    dailyFranchise: number;
     onSaveWork: (date: string, packages: number, tip: BonusTip) => void;
     onLeave: () => void;
     onClear: () => void;
@@ -1380,9 +1377,6 @@ function DayRow({
                                 Toplam: {fmtMoney(prim + DAILY_FIXED)}
                             </div>
                         )}
-                        <div className="text-red-500/80 tabular-nums">
-                            Franchise: −{fmtMoney(Math.round(dailyFranchise))}/gün
-                        </div>
                     </div>
                 </>
             )}

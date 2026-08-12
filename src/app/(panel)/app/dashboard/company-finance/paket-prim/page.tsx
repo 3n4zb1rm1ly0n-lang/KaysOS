@@ -895,44 +895,67 @@ export default function PaketPrimPage() {
                                     <th className="text-right font-medium px-3 py-2">Kalan</th>
                                     <th className="text-right font-medium px-3 py-2">Pkt/gün</th>
                                     <th className="text-right font-medium px-3 py-2">Bonus</th>
+                                    <th className="text-right font-medium px-3 py-2">Ay sonu</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {targetRows.map((row) => (
-                                    <tr
-                                        key={row.min}
-                                        className={
-                                            row.reached
-                                                ? 'bg-primary/5 text-muted-foreground'
-                                                : summary.nextMonthly?.nextMin === row.min
-                                                  ? 'bg-primary/10'
-                                                  : ''
-                                        }
-                                    >
-                                        <td className="px-3 py-1.5 tabular-nums">
-                                            {row.min}
-                                            {row.reached ? ' ✓' : ''}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums">
-                                            {row.reached ? '—' : row.remaining}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
-                                            {row.reached
-                                                ? '—'
-                                                : row.perDay === null
-                                                  ? '—'
-                                                  : row.perDay}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums">
-                                            {fmtMoney(row.bonus)}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {targetRows.map((row) => {
+                                    const projectedFixed =
+                                        summary.fixedPay + remainDays * DAILY_FIXED;
+                                    const extraPrim =
+                                        !row.reached &&
+                                        row.perDay != null &&
+                                        remainDays > 0
+                                            ? dailyPrim(row.perDay, scenarioTip) *
+                                              remainDays
+                                            : 0;
+                                    const monthEndTotal =
+                                        projectedFixed +
+                                        summary.dailyPrimTotal +
+                                        extraPrim +
+                                        row.bonus;
+                                    return (
+                                        <tr
+                                            key={row.min}
+                                            className={
+                                                row.reached
+                                                    ? 'bg-primary/5 text-muted-foreground'
+                                                    : summary.nextMonthly?.nextMin === row.min
+                                                      ? 'bg-primary/10'
+                                                      : ''
+                                            }
+                                        >
+                                            <td className="px-3 py-1.5 tabular-nums">
+                                                {row.min}
+                                                {row.reached ? ' ✓' : ''}
+                                            </td>
+                                            <td className="px-3 py-1.5 text-right tabular-nums">
+                                                {row.reached ? '—' : row.remaining}
+                                            </td>
+                                            <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                                                {row.reached
+                                                    ? '—'
+                                                    : row.perDay === null
+                                                      ? '—'
+                                                      : row.perDay}
+                                            </td>
+                                            <td className="px-3 py-1.5 text-right tabular-nums">
+                                                {fmtMoney(row.bonus)}
+                                            </td>
+                                            <td className="px-3 py-1.5 text-right font-medium tabular-nums text-primary">
+                                                {!row.reached && row.perDay === null
+                                                    ? '—'
+                                                    : fmtMoney(monthEndTotal)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
                     <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
-                        Pkt/gün = kalan paket ÷ kalan iş günü (izinler hariç; varsayılan izin Pazartesi).
+                        Pkt/gün = kalan paket ÷ kalan iş günü. Ay sonu = sabit + günlük prim
+                        (pkt/gün × {scenarioTip}) + bonus.
                     </p>
                 </div>
 

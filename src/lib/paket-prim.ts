@@ -337,7 +337,7 @@ export function isMonday(dateStr: string): boolean {
 
 /**
  * Boş Pazartesileri varsayılan izin yapar (haftada başka izin yoksa).
- * Dönüş: güncellenmiş ay + DB'ye yazılacak izin satırları.
+ * Yalnızca ay ilk kez boşken çağrılmalı; aksi halde kaldırılan izinler geri gelir.
  */
 export function applyDefaultMondayLeave(entries: PackageDayEntry[]): {
     entries: PackageDayEntry[];

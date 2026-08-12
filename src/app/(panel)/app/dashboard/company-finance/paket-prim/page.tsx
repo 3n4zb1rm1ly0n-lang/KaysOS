@@ -171,19 +171,24 @@ export default function PaketPrimPage() {
             }
         }
 
-        const { entries: withLeave, seeded } = applyDefaultMondayLeave(merged);
-        if (seeded.length > 0) {
-            const payloads = seeded
-                .map(toDbPayload)
-                .filter((p): p is NonNullable<typeof p> => p !== null);
-            const { error: seedErr } = await supabase.from(TABLE).upsert(payloads, {
-                onConflict: 'work_date'
-            });
-            if (seedErr) {
-                setError(seedErr.message);
-            } else {
-                merged = withLeave;
-                setStatus(`${seeded.length} Pazartesi varsayılan izin olarak işaretlendi.`);
+        // Varsayılan Pazartesi izni yalnızca ayda hiç kayıt yokken bir kez uygulanır.
+        // Böylece "İzni kaldır" sonrası sayfa yenilenince tekrar atanmaz.
+        const stillEmpty = !hasDb && !merged.some((e) => e.status === 'work' || e.status === 'leave');
+        if (stillEmpty) {
+            const { entries: withLeave, seeded } = applyDefaultMondayLeave(merged);
+            if (seeded.length > 0) {
+                const payloads = seeded
+                    .map(toDbPayload)
+                    .filter((p): p is NonNullable<typeof p> => p !== null);
+                const { error: seedErr } = await supabase.from(TABLE).upsert(payloads, {
+                    onConflict: 'work_date'
+                });
+                if (seedErr) {
+                    setError(seedErr.message);
+                } else {
+                    merged = withLeave;
+                    setStatus(`${seeded.length} Pazartesi varsayılan izin olarak işaretlendi.`);
+                }
             }
         }
 

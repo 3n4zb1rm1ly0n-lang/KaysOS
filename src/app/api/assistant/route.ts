@@ -24,11 +24,13 @@ function systemPrompt(): string {
     return [
         'KaysOS / Kaysia App yönetim asistanısın. Türkçe, net ve sayıya dayalı konuş.',
         `Bugünün tarihi: ${today}.`,
-        'Veriler Supabase’te. Tahmin etme: list_tables / query_table ile oku, sonra yorumla.',
-        'Para tutarlarını TL olarak yaz. Eksik tablo veya boş sonuçta bunu söyle.',
-        'Yazma, silme, şema değiştirme yok. SQL uydurma; yalnızca verilen araçları kullan.',
-        'Paket prim: sabit ücret ayın takvim gününe yayılır (55.223 TL / ay günü), prim iş gününe göre.',
-        'Kısa özet + gerekirse madde madde. Uydurma satır ekleme.'
+        'Veriler Supabase’te. Kolon/tablo uydurma.',
+        'Bilinmeyen alanlarda önce list_schema veya describe_table çağır; sonra query_table.',
+        'Paket prim: get_paket_prim_summary. Projeler: get_projects_summary (status: idea|potential|ongoing|on_hold|completed|cancelled).',
+        'Türkçe: aktif=ongoing, bekleyen=on_hold. is_active/pending kolonları yok.',
+        'Her tablonun panel sayfası list_schema içinde (page alanı).',
+        'Para tutarlarını TL yaz. Boş sonuçta kayıt yok de.',
+        'Yazma/silme yok. Kısa özet + madde.'
     ].join('\n');
 }
 
@@ -65,7 +67,10 @@ export async function POST(request: Request) {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {
         return NextResponse.json(
-            { error: 'OPENAI_API_KEY tanımlı değil. .env dosyasına ekleyip dev sunucusunu yeniden başlat.' },
+            {
+                error:
+                    'OPENAI_API_KEY sunucuda yok. Canlıda: Vercel → Settings → Environment Variables. Yerelde: .env + npm run dev yeniden başlat.'
+            },
             { status: 503 }
         );
     }
@@ -79,7 +84,12 @@ export async function POST(request: Request) {
 
     const incoming = Array.isArray(body.messages) ? body.messages : [];
     const history: ChatCompletionMessageParam[] = incoming
-        .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .filter(
+            (m) =>
+                m &&
+                (m.role === 'user' || m.role === 'assistant') &&
+                typeof m.content === 'string'
+        )
         .slice(-MAX_HISTORY)
         .map((m) => ({
             role: m.role as 'user' | 'assistant',
@@ -199,8 +209,33 @@ export async function GET() {
         return NextResponse.json({ error: 'Oturum gerekli.' }, { status: 401 });
     }
     const ready = Boolean(process.env.OPENAI_API_KEY?.trim());
+    const hasServiceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+
+    let paketPrimOk: boolean | null = null;
+    let paketPrimError: string | null = null;
+    try {
+        const db = createSupabaseServiceClient();
+        const { error } = await db
+            .from('company_finance_paket_prim_days')
+            .select('work_date', { count: 'exact', head: true });
+        if (error) {
+            paketPrimOk = false;
+            paketPrimError = error.message;
+        } else {
+            paketPrimOk = true;
+        }
+    } catch (e) {
+        paketPrimOk = false;
+        paketPrimError = e instanceof Error ? e.message : 'supabase hata';
+    }
+
     return NextResponse.json({
         ok: ready,
-        model: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL
+        model: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
+        supabase: {
+            has_service_role: hasServiceRole,
+            paket_prim_days: paketPrimOk,
+            paket_prim_error: paketPrimError
+        }
     });
 }

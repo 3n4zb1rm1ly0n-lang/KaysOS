@@ -43,6 +43,7 @@ export function ActiveChatInterface({
     const [loading, setLoading] = useState(false);
     const [ready, setReady] = useState<boolean | null>(null);
     const [model, setModel] = useState('gpt-4o-mini');
+    const [dataHint, setDataHint] = useState<string | null>(null);
     const endRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -51,6 +52,23 @@ export function ActiveChatInterface({
             .then((d) => {
                 setReady(Boolean(d.ok));
                 if (typeof d.model === 'string') setModel(d.model);
+                const sb = d.supabase as
+                    | {
+                          paket_prim_days?: boolean;
+                          paket_prim_error?: string | null;
+                          has_service_role?: boolean;
+                      }
+                    | undefined;
+                if (sb && sb.paket_prim_days === false) {
+                    setDataHint(
+                        sb.paket_prim_error ||
+                            'Paket prim tablosuna erişilemiyor. create_paket_prim_days.sql ve Vercel Supabase env’lerini kontrol et.'
+                    );
+                } else if (sb && sb.has_service_role === false) {
+                    setDataHint(
+                        'SUPABASE_SERVICE_ROLE_KEY Vercel’de yok; anon ile denenecek. Okuma sorununda service role ekle.'
+                    );
+                }
             })
             .catch(() => setReady(false));
     }, []);
@@ -103,7 +121,10 @@ export function ActiveChatInterface({
         } catch {
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: 'Bağlantı hatası. Dev sunucusunun çalıştığından emin ol.' }
+                {
+                    role: 'assistant',
+                    content: 'Bağlantı hatası. Dev sunucusunun çalıştığından emin ol.'
+                }
             ]);
         } finally {
             setLoading(false);
@@ -124,11 +145,27 @@ export function ActiveChatInterface({
                     </button>
                 </div>
             )}
+
             <div className="flex-1 overflow-y-auto space-y-4 p-4 md:p-5">
                 {ready === false && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300 space-y-2">
+                        <p className="font-medium">OpenAI anahtarı sunucuda yok.</p>
+                        <p>
+                            <strong>Canlı site:</strong> Vercel → Project → Settings → Environment
+                            Variables → <code className="text-xs">OPENAI_API_KEY</code> ekle
+                            (Production) → Redeploy.
+                        </p>
+                        <p>
+                            <strong>Yerel:</strong> proje kökünde <code className="text-xs">.env</code>{' '}
+                            dosyasına koy, Cursor terminalinde <code className="text-xs">npm run
+                            dev</code>’i durdurup yeniden başlat. Canlı için yerel .env yetmez.
+                        </p>
+                    </div>
+                )}
+
+                {dataHint && (
                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-                        OpenAI anahtarı görünmüyor. `.env` içinde `OPENAI_API_KEY` koyup `npm run
-                        dev`’i yeniden başlat.
+                        {dataHint}
                     </div>
                 )}
 

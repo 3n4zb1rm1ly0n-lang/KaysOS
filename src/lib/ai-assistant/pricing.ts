@@ -1,4 +1,4 @@
-/** USD / 1M token — OpenAI liste fiyatı (2026). Model alias’ları aynı banda düşer. */
+/** USD / 1M token — OpenAI liste fiyatı. */
 
 type Band = { input: number; output: number };
 
@@ -30,3 +30,6 @@ export function estimateCostUsd(
 }
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+
+/** Panel AI kullanım bütçe çubuğu (USD). OpenAI soft/hard limit ile hizala. */
+export const AI_MONTHLY_BUDGET_USD = 10;

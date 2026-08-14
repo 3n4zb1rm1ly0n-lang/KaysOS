@@ -15,7 +15,8 @@ export default function AssistantPage() {
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight">Asistan</h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Supabase verilerini okur ve yorumlar. Fikir balonu ayrıdır; burası gerçek model.
+                        Supabase verilerini okur ve yorumlar. Fikir balonu ayrıdır; burası gerçek
+                        model.
                     </p>
                 </div>
                 <Link

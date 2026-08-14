@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Loader2, AlertTriangle, Globe } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Loader2, AlertTriangle, Globe, Coins } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { DEFAULT_SITE_CONTENT, type SiteContent } from '@/lib/marketing-types';
+import {
+    DEFAULT_AI_BUDGET,
+    normalizeBudgetRow,
+    type AiBudgetSettings
+} from '@/lib/ai-assistant/budget';
 
 export default function SettingsPage() {
     const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -15,6 +20,13 @@ export default function SettingsPage() {
     const [siteSaving, setSiteSaving] = useState(false);
     const [siteNotice, setSiteNotice] = useState<string | null>(null);
 
+    const [budget, setBudget] = useState<AiBudgetSettings>(DEFAULT_AI_BUDGET);
+    const [budgetInput, setBudgetInput] = useState(String(DEFAULT_AI_BUDGET.limit_usd));
+    const [budgetSaving, setBudgetSaving] = useState(false);
+    const [budgetResetting, setBudgetResetting] = useState(false);
+    const [budgetNotice, setBudgetNotice] = useState<string | null>(null);
+    const [budgetError, setBudgetError] = useState<string | null>(null);
+
     const fetchSiteContent = async () => {
         const { data, error } = await supabase
             .from('site_content')
@@ -25,6 +37,26 @@ export default function SettingsPage() {
             setSiteForm({ ...DEFAULT_SITE_CONTENT, ...data });
         }
     };
+
+    const fetchBudget = useCallback(async () => {
+        setBudgetError(null);
+        const { data, error } = await supabase
+            .from('ai_budget_settings')
+            .select('id, limit_usd, period_started_at, updated_at')
+            .eq('id', 'main')
+            .maybeSingle();
+        if (error) {
+            setBudgetError(
+                error.message.includes('ai_budget_settings') || error.code === '42P01'
+                    ? 'Tablo yok. Supabase SQL Editor’da create_ai_budget_settings.sql çalıştır.'
+                    : error.message
+            );
+            return;
+        }
+        const normalized = normalizeBudgetRow(data);
+        setBudget(normalized);
+        setBudgetInput(String(normalized.limit_usd));
+    }, []);
 
     const saveSiteContent = async () => {
         setSiteSaving(true);
@@ -49,9 +81,90 @@ export default function SettingsPage() {
         setSiteNotice('Vitrin metinleri kaydedildi.');
     };
 
+    const saveBudgetLimit = async () => {
+        setBudgetSaving(true);
+        setBudgetNotice(null);
+        setBudgetError(null);
+        const parsed = parseFloat(budgetInput.replace(',', '.'));
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            setBudgetError('Geçerli bir limit gir (örn. 10).');
+            setBudgetSaving(false);
+            return;
+        }
+        const limit = Math.round(parsed * 100) / 100;
+        const now = new Date().toISOString();
+        const { data, error } = await supabase
+            .from('ai_budget_settings')
+            .upsert(
+                {
+                    id: 'main',
+                    limit_usd: limit,
+                    period_started_at: budget.period_started_at || now,
+                    updated_at: now
+                },
+                { onConflict: 'id' }
+            )
+            .select('id, limit_usd, period_started_at, updated_at')
+            .single();
+        setBudgetSaving(false);
+        if (error) {
+            setBudgetError(
+                error.message.includes('ai_budget_settings') || error.code === '42P01'
+                    ? 'Tablo yok. create_ai_budget_settings.sql çalıştır.'
+                    : error.message
+            );
+            return;
+        }
+        const normalized = normalizeBudgetRow(data);
+        setBudget(normalized);
+        setBudgetInput(String(normalized.limit_usd));
+        setBudgetNotice(`Limit $${normalized.limit_usd.toFixed(2)} kaydedildi.`);
+    };
+
+    const resetBudgetPeriod = async () => {
+        if (
+            !window.confirm(
+                'Bütçe dönemini şimdi sıfırlamak istiyor musun? Progress bar sıfırdan sayar; eski loglar silinmez.'
+            )
+        ) {
+            return;
+        }
+        setBudgetResetting(true);
+        setBudgetNotice(null);
+        setBudgetError(null);
+        const now = new Date().toISOString();
+        const limit =
+            Number.isFinite(Number(budget.limit_usd)) && Number(budget.limit_usd) > 0
+                ? Number(budget.limit_usd)
+                : 10;
+        const { data, error } = await supabase
+            .from('ai_budget_settings')
+            .upsert(
+                {
+                    id: 'main',
+                    limit_usd: limit,
+                    period_started_at: now,
+                    updated_at: now
+                },
+                { onConflict: 'id' }
+            )
+            .select('id, limit_usd, period_started_at, updated_at')
+            .single();
+        setBudgetResetting(false);
+        if (error) {
+            setBudgetError(error.message);
+            return;
+        }
+        const normalized = normalizeBudgetRow(data);
+        setBudget(normalized);
+        setBudgetInput(String(normalized.limit_usd));
+        setBudgetNotice('Dönem sıfırlandı. Çubuk bundan sonraki kullanımdan sayılacak.');
+    };
+
     useEffect(() => {
-        fetchSiteContent();
-    }, []);
+        void fetchSiteContent();
+        void fetchBudget();
+    }, [fetchBudget]);
 
     const handleResetDatabase = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -87,8 +200,65 @@ export default function SettingsPage() {
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Ayarlar & Veri Yönetimi</h2>
                 <p className="text-muted-foreground mt-1">
-                    Vitrin metinlerini yönetin ve veritabanını sıfırlayın.
+                    Vitrin, AI bütçe ve veritabanı işlemleri.
                 </p>
+            </div>
+
+            <div className="border rounded-xl bg-card overflow-hidden ring-1 ring-primary/20">
+                <div className="p-6 border-b bg-secondary/10 flex items-center gap-2">
+                    <Coins className="w-5 h-5 text-primary" />
+                    <h3 className="font-semibold">AI bütçe</h3>
+                </div>
+                <div className="p-6 space-y-4 max-w-xl">
+                    <p className="text-sm text-muted-foreground">
+                        AI kullanım sayfasındaki progress bar bu limite göre dolar. Sıfırlama logları
+                        silmez; yalnızca sayaç dönemini yeniden başlatır.
+                    </p>
+                    {budgetError && (
+                        <p className="text-sm text-red-500 dark:text-red-400">{budgetError}</p>
+                    )}
+                    {budgetNotice && <p className="text-sm text-primary">{budgetNotice}</p>}
+                    <div>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                            Limit (USD)
+                        </label>
+                        <input
+                            type="number"
+                            min={0.01}
+                            step={0.01}
+                            value={budgetInput}
+                            onChange={(e) => setBudgetInput(e.target.value)}
+                            className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
+                        />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Dönem başlangıcı:{' '}
+                        {budget.period_started_at &&
+                        new Date(budget.period_started_at).getTime() > 0
+                            ? new Date(budget.period_started_at).toLocaleString('tr-TR')
+                            : 'Tüm kayıtlar'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void saveBudgetLimit()}
+                            disabled={budgetSaving}
+                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        >
+                            {budgetSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Limiti kaydet
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void resetBudgetPeriod()}
+                            disabled={budgetResetting}
+                            className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm hover:bg-secondary/50 disabled:opacity-50"
+                        >
+                            {budgetResetting && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Dönemi sıfırla
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div className="border rounded-xl bg-card overflow-hidden ring-1 ring-blue-500/20">
@@ -185,8 +355,9 @@ export default function SettingsPage() {
                 </div>
                 <div className="p-6 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                        Domainler, projeler, AI abonelikleri ve şirket finans hesap satırları kalıcı olarak
-                        silinir. Bu işlem geri alınamaz. Onay için `ADMIN_PASSWORD` (.env) gerekir.
+                        Domainler, projeler, AI abonelikleri ve şirket finans hesap satırları kalıcı
+                        olarak silinir. Bu işlem geri alınamaz. Onay için `ADMIN_PASSWORD` (.env)
+                        gerekir.
                     </p>
                     <button
                         type="button"
@@ -246,7 +417,9 @@ export default function SettingsPage() {
                                     disabled={resetLoading || !resetPassword}
                                     className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2"
                                 >
-                                    {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    {resetLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : null}
                                     Evet, sıfırla
                                 </button>
                             </div>

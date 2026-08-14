@@ -1,5 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { AI_READ_TABLE_NAMES, AI_READ_TABLES, MAX_QUERY_ROWS } from '@/lib/ai-assistant/tables';
+import {
+    AI_READ_TABLE_NAMES,
+    AI_SCHEMA,
+    MAX_QUERY_ROWS,
+    listSchemaCatalog,
+    schemaForTable,
+    staticDescribe
+} from '@/lib/ai-assistant/schema';
 import {
     COMPANY_FIXED_MONTHLY,
     mergeMonthFromRows,
@@ -11,24 +18,19 @@ import {
 
 const COL = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
-/** Model sık yanlış tablo adı uyduruyor — bilinen takma adlar */
-const TABLE_ALIASES: Record<string, string> = {
-    paket_prim: 'company_finance_paket_prim_days',
-    paket_prim_days: 'company_finance_paket_prim_days',
-    paketprim: 'company_finance_paket_prim_days',
-    package_prim: 'company_finance_paket_prim_days',
-    prim: 'company_finance_paket_prim_days',
-    prim_days: 'company_finance_paket_prim_days',
-    paket_prim_closings: 'company_finance_paket_prim_closings',
-    monthly: 'company_finance_monthly_entries',
-    monthly_entries: 'company_finance_monthly_entries',
-    aylik_kazanc: 'company_finance_monthly_entries',
-    domains: 'domains',
-    projects: 'projects',
-    bagkur: 'company_finance_bagkur_months',
-    fuel: 'company_finance_fuel_logs',
-    benzin: 'company_finance_fuel_logs'
-};
+function buildAliases(): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const t of AI_SCHEMA) {
+        map[t.name] = t.name;
+        map[t.label.toLowerCase()] = t.name;
+        for (const a of t.aliases || []) {
+            map[a.toLowerCase()] = t.name;
+        }
+    }
+    return map;
+}
+
+const TABLE_ALIASES = buildAliases();
 
 function safeCol(name: unknown): string | null {
     if (typeof name !== 'string' || !COL.test(name) || name.length > 64) return null;
@@ -38,7 +40,8 @@ function safeCol(name: unknown): string | null {
 function resolveTable(raw: string): string | null {
     const t = raw.trim();
     if (AI_READ_TABLE_NAMES.has(t)) return t;
-    const alias = TABLE_ALIASES[t.toLowerCase().replace(/\s+/g, '_')];
+    const key = t.toLowerCase().replace(/\s+/g, '_');
+    const alias = TABLE_ALIASES[key] || TABLE_ALIASES[t.toLowerCase()];
     if (alias && AI_READ_TABLE_NAMES.has(alias)) return alias;
     const fuzzy = Array.from(AI_READ_TABLE_NAMES).find(
         (n) => n.endsWith(t) || n.includes(t) || t.includes(n)
@@ -46,12 +49,64 @@ function resolveTable(raw: string): string | null {
     return fuzzy ?? null;
 }
 
+async function liveDescribe(db: SupabaseClient, table: string) {
+    const { data, error } = await db.rpc('ai_describe_table', { p_table: table });
+    if (error || !data) {
+        return { ok: false as const, error: error?.message || 'rpc yok' };
+    }
+    const rows = data as {
+        column_name: string;
+        data_type: string;
+        udt_name: string;
+        is_nullable: string;
+        column_default: string | null;
+        ordinal_position: number;
+    }[];
+    return {
+        ok: true as const,
+        columns: rows.map((r) => ({
+            name: r.column_name,
+            data_type: r.data_type,
+            udt_name: r.udt_name,
+            is_nullable: r.is_nullable,
+            column_default: r.column_default,
+            ordinal_position: r.ordinal_position
+        })),
+        column_names: rows.map((r) => r.column_name)
+    };
+}
+
 export const ASSISTANT_TOOLS = [
     {
         type: 'function' as const,
         function: {
+            name: 'list_schema',
+            description:
+                'Tüm okunabilir tabloları, panel sayfalarını, kolon adlarını ve enum değerlerini listeler. Bilinmeyen tabloda/kolonda önce bunu çağır. Yeni sayfa eklendikçe katalog güncellenir.',
+            parameters: { type: 'object', properties: {}, additionalProperties: false }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'describe_table',
+            description:
+                'Bir tablonun gerçek kolonlarını döndürür (önce DB introspect, yoksa statik katalog). query_table öncesi kolon uydurmamak için kullan.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    table: { type: 'string', description: 'Tablo adı veya alias (örn. projects, paket_prim)' }
+                },
+                required: ['table'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
             name: 'list_tables',
-            description: 'Okunabilir KaysOS tablolarının adını ve kısa açıklamasını döndürür.',
+            description: 'Kısa tablo listesi (list_schema tercih edilir).',
             parameters: { type: 'object', properties: {}, additionalProperties: false }
         }
     },
@@ -334,10 +389,57 @@ export async function runAssistantTool(
         return JSON.stringify({ error: 'Geçersiz JSON argüman' });
     }
 
+    if (name === 'list_schema') {
+        return JSON.stringify({
+            how_to_add_page:
+                'Yeni sayfa: 1) Supabase tablo 2) src/lib/ai-assistant/schema.ts AI_SCHEMA kaydı 3) isteğe bağlı özet tool',
+            tables: listSchemaCatalog()
+        });
+    }
+
+    if (name === 'describe_table') {
+        const rawTable = typeof args.table === 'string' ? args.table : '';
+        const table = resolveTable(rawTable);
+        if (!table) {
+            return JSON.stringify({
+                error: 'Bu tabloya erişim yok',
+                requested: rawTable,
+                tip: 'Önce list_schema çağır.'
+            });
+        }
+        const catalog = staticDescribe(table);
+        const live = await liveDescribe(db, table);
+        if (live.ok) {
+            return JSON.stringify({
+                table,
+                label: catalog?.label,
+                page: catalog?.page,
+                enums: catalog?.enums || null,
+                source: 'live_db',
+                columns: live.columns,
+                column_names: live.column_names,
+                catalog_notes: catalog?.columns || []
+            });
+        }
+        if (catalog) {
+            return JSON.stringify({
+                ...catalog,
+                live_error: live.error,
+                tip: 'Canlı kolon için create_ai_describe_table.sql çalıştır; şimdilik statik katalog.'
+            });
+        }
+        return JSON.stringify({ error: 'Şema yok', table });
+    }
+
     if (name === 'list_tables') {
         return JSON.stringify({
-            tables: AI_READ_TABLES,
-            tip: 'Paket prim → get_paket_prim_summary. Projeler → get_projects_summary (status: ongoing/on_hold…).'
+            tables: listSchemaCatalog().map((t) => ({
+                name: t.name,
+                label: t.label,
+                page: t.page,
+                hint: t.hint
+            })),
+            tip: 'Kolonlar için list_schema veya describe_table kullan. Paket prim → get_paket_prim_summary. Projeler → get_projects_summary.'
         });
     }
 
@@ -365,8 +467,8 @@ export async function runAssistantTool(
         return JSON.stringify({
             error: 'Bu tabloya erişim yok',
             requested: rawTable,
-            allowed: AI_READ_TABLES.map((t) => t.name),
-            tip: 'Paket prim için get_paket_prim_summary veya company_finance_paket_prim_days kullan.'
+            allowed: Array.from(AI_READ_TABLE_NAMES),
+            tip: 'list_schema / describe_table ile doğru ad ve kolonları öğren.'
         });
     }
 
@@ -384,6 +486,24 @@ export async function runAssistantTool(
     const limit = Number.isFinite(limitRaw)
         ? Math.min(MAX_QUERY_ROWS, Math.max(1, Math.floor(limitRaw)))
         : 40;
+
+    // Validate columns against known schema when not *
+    if (select !== '*') {
+        const known = schemaForTable(table)?.columns.map((c) => c.name);
+        if (known) {
+            const parts = select.split(',');
+            const bad = parts.filter((c) => !known.includes(c));
+            if (bad.length) {
+                return JSON.stringify({
+                    error: 'Bilinmeyen kolon',
+                    table,
+                    bad_columns: bad,
+                    allowed_columns: known,
+                    tip: 'describe_table ile kolon listesini al.'
+                });
+            }
+        }
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let q: any = db.from(table).select(select).limit(limit);

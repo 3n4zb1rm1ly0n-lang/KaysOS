@@ -7,7 +7,7 @@ export type TableInfo = {
 };
 
 export const AI_READ_TABLES: TableInfo[] = [
-    { name: 'projects', label: 'Projeler', hint: 'status, title, dates' },
+    { name: 'projects', label: 'Projeler', hint: 'status: idea|potential|ongoing|on_hold|completed|cancelled' },
     { name: 'domains', label: 'Domainler', hint: 'yenileme, registrar' },
     { name: 'ecosystem_items', label: 'Ekosistem', hint: 'bağlantılar, vitrin' },
     { name: 'ai_subscriptions', label: 'AI abonelikler', hint: 'proje AI araçları' },

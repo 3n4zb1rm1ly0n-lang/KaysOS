@@ -74,19 +74,39 @@ export const ASSISTANT_TOOLS = [
     {
         type: 'function' as const,
         function: {
+            name: 'get_projects_summary',
+            description:
+                'Projeler özeti. Status değerleri (İngilizce kod): idea=Fikir, potential=Potansiyel, ongoing=Devam ediyor/aktif, on_hold=Yarıda/Beklemede, completed=Bitti, cancelled=İptal. "aktif" → ongoing; "bekleyen" → on_hold. Kolon uydurma; bu aracı kullan.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    status: {
+                        type: 'string',
+                        description:
+                            'Opsiyonel filtre: idea | potential | ongoing | on_hold | completed | cancelled. Türkçe: aktif→ongoing, bekleyen→on_hold'
+                    }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
             name: 'query_table',
             description:
-                'Bir tablodan satır okur (yalnızca SELECT). Tablo adı tam olmalı; paket günleri için company_finance_paket_prim_days. Paket prim özeti için tercih et: get_paket_prim_summary.',
+                'Bir tablodan satır okur (yalnızca SELECT). Projeler için get_projects_summary tercih et. Paket prim için get_paket_prim_summary. projects.status yalnızca: idea, potential, ongoing, on_hold, completed, cancelled.',
             parameters: {
                 type: 'object',
                 properties: {
                     table: {
                         type: 'string',
-                        description: 'Allowlist tablo adı (örn. company_finance_paket_prim_days)'
+                        description: 'Allowlist tablo adı (örn. projects, company_finance_paket_prim_days)'
                     },
                     columns: {
                         type: 'string',
-                        description: 'Virgüllü kolon listesi veya * (varsayılan *)'
+                        description:
+                            'Virgüllü kolon listesi veya *. projects için güvenli: id,title,status,description,notes,target_end_date,updated_at,created_at'
                     },
                     filters: {
                         type: 'array',
@@ -114,6 +134,113 @@ export const ASSISTANT_TOOLS = [
 ];
 
 type Filter = { column?: string; op?: string; value?: string };
+
+const PROJECT_STATUS_LABELS: Record<string, string> = {
+    idea: 'Fikir',
+    potential: 'Potansiyel',
+    ongoing: 'Devam ediyor',
+    on_hold: 'Yarıda / Beklemede',
+    completed: 'Bitti',
+    cancelled: 'İptal'
+};
+
+const PROJECT_STATUS_ALIASES: Record<string, string> = {
+    aktif: 'ongoing',
+    active: 'ongoing',
+    devam: 'ongoing',
+    'devam ediyor': 'ongoing',
+    ongoing: 'ongoing',
+    bekleyen: 'on_hold',
+    beklemede: 'on_hold',
+    pending: 'on_hold',
+    hold: 'on_hold',
+    on_hold: 'on_hold',
+    yarıda: 'on_hold',
+    yarida: 'on_hold',
+    fikir: 'idea',
+    idea: 'idea',
+    potansiyel: 'potential',
+    potential: 'potential',
+    bitti: 'completed',
+    completed: 'completed',
+    iptal: 'cancelled',
+    cancelled: 'cancelled'
+};
+
+function resolveProjectStatus(raw: unknown): string | null {
+    if (typeof raw !== 'string' || !raw.trim()) return null;
+    const key = raw.trim().toLowerCase();
+    if (PROJECT_STATUS_LABELS[key]) return key;
+    return PROJECT_STATUS_ALIASES[key] ?? null;
+}
+
+async function projectsSummary(db: SupabaseClient, statusRaw?: unknown): Promise<string> {
+    const statusFilter = resolveProjectStatus(statusRaw);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = db
+        .from('projects')
+        .select('id, title, status, description, notes, target_end_date, updated_at, created_at')
+        .order('updated_at', { ascending: false })
+        .limit(80);
+
+    if (statusFilter) q = q.eq('status', statusFilter);
+
+    const { data, error } = await q;
+    if (error) {
+        return JSON.stringify({
+            error: error.message,
+            table: 'projects',
+            hint: 'Kolonlar: id, title, status, description, notes, target_end_date, updated_at, created_at'
+        });
+    }
+
+    const rows = (data || []).map((r: Record<string, unknown>) => {
+        const status = String(r.status || '');
+        return {
+            id: r.id,
+            title: r.title,
+            status,
+            status_label: PROJECT_STATUS_LABELS[status] || status,
+            description: r.description,
+            notes: r.notes,
+            target_end_date: r.target_end_date,
+            updated_at: r.updated_at
+        };
+    });
+
+    const counts: Record<string, number> = {};
+    for (const code of Object.keys(PROJECT_STATUS_LABELS)) counts[code] = 0;
+
+    if (!statusFilter) {
+        for (const r of rows) {
+            if (r.status in counts) counts[r.status] += 1;
+        }
+    } else {
+        // filtered list — also fetch full counts lightly
+        const { data: allStatus } = await db.from('projects').select('status').limit(500);
+        for (const r of allStatus || []) {
+            const s = String((r as { status?: string }).status || '');
+            if (s in counts) counts[s] += 1;
+        }
+    }
+
+    return JSON.stringify({
+        status_codes: PROJECT_STATUS_LABELS,
+        aliases: {
+            aktif: 'ongoing',
+            bekleyen: 'on_hold',
+            fikir: 'idea',
+            potansiyel: 'potential',
+            bitti: 'completed',
+            iptal: 'cancelled'
+        },
+        filter: statusFilter,
+        counts,
+        count: rows.length,
+        projects: rows
+    });
+}
 
 async function paketPrimSummary(
     db: SupabaseClient,
@@ -210,7 +337,7 @@ export async function runAssistantTool(
     if (name === 'list_tables') {
         return JSON.stringify({
             tables: AI_READ_TABLES,
-            tip: 'Paket prim özeti için get_paket_prim_summary kullan.'
+            tip: 'Paket prim → get_paket_prim_summary. Projeler → get_projects_summary (status: ongoing/on_hold…).'
         });
     }
 
@@ -222,6 +349,10 @@ export async function runAssistantTool(
             Number.isFinite(year) ? year : undefined,
             Number.isFinite(month) ? month : undefined
         );
+    }
+
+    if (name === 'get_projects_summary') {
+        return projectsSummary(db, args.status);
     }
 
     if (name !== 'query_table') {

@@ -9,7 +9,8 @@ import {
 } from '@/lib/ai-assistant/schema';
 import {
     companyMonthlySummary,
-    personalFinanceSummary
+    personalFinanceSummary,
+    budgetSavingsSummary
 } from '@/lib/ai-assistant/finance-summaries';
 import {
     COMPANY_FIXED_MONTHLY,
@@ -151,7 +152,23 @@ export const ASSISTANT_TOOLS = [
         function: {
             name: 'get_personal_finance_summary',
             description:
-                'Kişisel finans özeti (gelir/gider/borç) — panel ile aynı. Bütçe: Σincome.amount − Σexpense.amount (paid kısmi ödeme bütçeyi düşürmez). company_cash = şirket cashNet kopyası. year/month yoksa bu ay.',
+                'Kişisel finans özeti — panel ile aynı. net_nakit = Σ(amount−withheld bloke/haciz). Bütçe kalanı net−gider. company_cash = şirket cashNet kopyası. year/month yoksa bu ay.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    year: { type: 'integer' },
+                    month: { type: 'integer', description: '1–12' }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'get_budget_savings_summary',
+            description:
+                'Kişisel Bütçe + Birikim özeti ve yüzde önerisi. Net nakit (bloke/haciz düşülmüş) tabanı, mevcut plan satırları, birikim kasaları, borç baskısı ve önerilen şablon (50/30/20, borç odaklı vb.). Bütçe önerisi istendiğinde MUTLAKA bunu çağır. Yazma yok; kullanıcı panelde uygular.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -475,7 +492,7 @@ export async function runAssistantTool(
                 page: t.page,
                 hint: t.hint
             })),
-            tip: 'Kolonlar: list_schema/describe_table. Paket prim→get_paket_prim_summary. Projeler→get_projects_summary. Şirket aylık→get_company_monthly_summary. Kişisel→get_personal_finance_summary.'
+            tip: 'Kolonlar: list_schema/describe_table. Paket prim→get_paket_prim_summary. Projeler→get_projects_summary. Şirket aylık→get_company_monthly_summary. Kişisel→get_personal_finance_summary. Bütçe/birikim→get_budget_savings_summary.'
         });
     }
 
@@ -503,6 +520,16 @@ export async function runAssistantTool(
         const year = typeof args.year === 'number' ? args.year : Number(args.year);
         const month = typeof args.month === 'number' ? args.month : Number(args.month);
         return personalFinanceSummary(
+            db,
+            Number.isFinite(year) ? year : undefined,
+            Number.isFinite(month) ? month : undefined
+        );
+    }
+
+    if (name === 'get_budget_savings_summary') {
+        const year = typeof args.year === 'number' ? args.year : Number(args.year);
+        const month = typeof args.month === 'number' ? args.month : Number(args.month);
+        return budgetSavingsSummary(
             db,
             Number.isFinite(year) ? year : undefined,
             Number.isFinite(month) ? month : undefined

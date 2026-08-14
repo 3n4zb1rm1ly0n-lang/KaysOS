@@ -10,6 +10,10 @@ import {
 export const PF_INCOMES = 'personal_finance_incomes';
 export const PF_EXPENSES = 'personal_finance_expenses';
 export const PF_DEBTS = 'personal_finance_debts';
+export const PF_BUDGET_LINES = 'personal_finance_budget_lines';
+export const PF_BUDGET_MONTHS = 'personal_finance_budget_months';
+export const PF_SAVINGS_POTS = 'personal_finance_savings_pots';
+export const PF_SAVINGS_LEDGER = 'personal_finance_savings_ledger';
 export const COMPANY_SOURCE = 'company_cash';
 
 export const DEBT_TYPES = [
@@ -18,6 +22,37 @@ export const DEBT_TYPES = [
     { value: 'enforcement', label: 'İcra' },
     { value: 'other', label: 'Diğer' }
 ] as const;
+
+export const WITHHELD_KINDS = [
+    { value: '', label: 'Yok' },
+    { value: 'block', label: 'Bloke' },
+    { value: 'seizure', label: 'Haciz' },
+    { value: 'other', label: 'Diğer kesinti' }
+] as const;
+
+export type WithheldKind = (typeof WITHHELD_KINDS)[number]['value'];
+
+export const BUDGET_LINE_TYPES = [
+    { value: 'savings', label: 'Birikim' },
+    { value: 'expense', label: 'Gider' },
+    { value: 'debt', label: 'Borç' },
+    { value: 'free', label: 'Serbest' }
+] as const;
+
+export type BudgetLineType = (typeof BUDGET_LINE_TYPES)[number]['value'];
+
+export function withheldKindLabel(kind: string): string {
+    return WITHHELD_KINDS.find((k) => k.value === kind)?.label ?? 'Kesinti';
+}
+
+export function budgetLineTypeLabel(type: string): string {
+    return BUDGET_LINE_TYPES.find((t) => t.value === type)?.label ?? 'Serbest';
+}
+
+/** Brüt − bloke/haciz (negatife düşmez) */
+export function incomeNetCash(amount: number, withheldAmount: number): number {
+    return Math.max(0, parseMoney(amount) - parseMoney(withheldAmount));
+}
 
 export type DebtType = (typeof DEBT_TYPES)[number]['value'];
 
@@ -123,7 +158,94 @@ export type PersonalIncomeRow = {
     repeats_monthly: boolean;
     note: string;
     sort_order: number;
+    withheld_amount: number;
+    withheld_kind: WithheldKind | string;
+    withheld_note: string;
 };
+
+export type BudgetLineRow = {
+    id: string;
+    year: number;
+    month: number;
+    name: string;
+    percent: number;
+    line_type: BudgetLineType | string;
+    linked_savings_id: string | null;
+    linked_expense_id: string | null;
+    linked_debt_id: string | null;
+    sent_amount: number;
+    note: string;
+    sort_order: number;
+};
+
+export type BudgetMonthRow = {
+    id: string;
+    year: number;
+    month: number;
+    base_mode: 'net_income' | 'manual' | string;
+    manual_base: number;
+    note: string;
+    is_closed: boolean;
+};
+
+export type SavingsPotRow = {
+    id: string;
+    name: string;
+    balance: number;
+    goal_amount: number;
+    note: string;
+    sort_order: number;
+    is_archived: boolean;
+};
+
+export type SavingsLedgerRow = {
+    id: string;
+    pot_id: string;
+    amount: number;
+    year: number | null;
+    month: number | null;
+    budget_line_id: string | null;
+    note: string;
+    created_at: string;
+};
+
+export const BUDGET_TEMPLATES: {
+    id: string;
+    label: string;
+    hint: string;
+    lines: { name: string; percent: number; line_type: BudgetLineType }[];
+}[] = [
+    {
+        id: '505020',
+        label: '50 / 30 / 20',
+        hint: 'Birikim %50 · ihtiyaç %30 · serbest %20',
+        lines: [
+            { name: 'Birikim', percent: 50, line_type: 'savings' },
+            { name: 'İhtiyaç / sabit', percent: 30, line_type: 'expense' },
+            { name: 'Serbest', percent: 20, line_type: 'free' }
+        ]
+    },
+    {
+        id: 'debt-focus',
+        label: 'Borç odaklı',
+        hint: 'Borç %50 · birikim %20 · serbest %30',
+        lines: [
+            { name: 'Borç ödeme', percent: 50, line_type: 'debt' },
+            { name: 'Birikim', percent: 20, line_type: 'savings' },
+            { name: 'Serbest', percent: 30, line_type: 'free' }
+        ]
+    },
+    {
+        id: 'save-hard',
+        label: 'Agresif birikim',
+        hint: 'Birikim %60 · borç %20 · serbest %20',
+        lines: [
+            { name: 'Birikim', percent: 60, line_type: 'savings' },
+            { name: 'Borç', percent: 20, line_type: 'debt' },
+            { name: 'Serbest', percent: 20, line_type: 'free' }
+        ]
+    }
+];
 
 export type PersonalExpenseRow = {
     id: string;
@@ -148,6 +270,8 @@ export function expenseIsFullyPaid(amount: number, paidAmount: number): boolean 
 }
 
 export function mapIncome(r: Record<string, unknown>): PersonalIncomeRow {
+    const rawKind = String(r.withheld_kind ?? '');
+    const withheld_kind = WITHHELD_KINDS.some((k) => k.value === rawKind) ? rawKind : '';
     return {
         id: String(r.id),
         year: Number(r.year),
@@ -162,8 +286,76 @@ export function mapIncome(r: Record<string, unknown>): PersonalIncomeRow {
         is_received: r.is_received !== false,
         repeats_monthly: Boolean(r.repeats_monthly),
         note: String(r.note ?? ''),
+        sort_order: Number(r.sort_order) || 0,
+        withheld_amount: parseMoney(r.withheld_amount as string | number),
+        withheld_kind,
+        withheld_note: String(r.withheld_note ?? '')
+    };
+}
+
+export function mapBudgetLine(r: Record<string, unknown>): BudgetLineRow {
+    const rawType = String(r.line_type ?? 'free');
+    const line_type = BUDGET_LINE_TYPES.some((t) => t.value === rawType) ? rawType : 'free';
+    return {
+        id: String(r.id),
+        year: Number(r.year),
+        month: Number(r.month),
+        name: String(r.name ?? ''),
+        percent: parseMoney(r.percent as string | number),
+        line_type,
+        linked_savings_id: r.linked_savings_id ? String(r.linked_savings_id) : null,
+        linked_expense_id: r.linked_expense_id ? String(r.linked_expense_id) : null,
+        linked_debt_id: r.linked_debt_id ? String(r.linked_debt_id) : null,
+        sent_amount: parseMoney(r.sent_amount as string | number),
+        note: String(r.note ?? ''),
         sort_order: Number(r.sort_order) || 0
     };
+}
+
+export function mapBudgetMonth(r: Record<string, unknown>): BudgetMonthRow {
+    const mode = String(r.base_mode ?? 'net_income');
+    return {
+        id: String(r.id),
+        year: Number(r.year),
+        month: Number(r.month),
+        base_mode: mode === 'manual' ? 'manual' : 'net_income',
+        manual_base: parseMoney(r.manual_base as string | number),
+        note: String(r.note ?? ''),
+        is_closed: Boolean(r.is_closed)
+    };
+}
+
+export function mapSavingsPot(r: Record<string, unknown>): SavingsPotRow {
+    return {
+        id: String(r.id),
+        name: String(r.name ?? ''),
+        balance: parseMoney(r.balance as string | number),
+        goal_amount: parseMoney(r.goal_amount as string | number),
+        note: String(r.note ?? ''),
+        sort_order: Number(r.sort_order) || 0,
+        is_archived: Boolean(r.is_archived)
+    };
+}
+
+export function mapSavingsLedger(r: Record<string, unknown>): SavingsLedgerRow {
+    return {
+        id: String(r.id),
+        pot_id: String(r.pot_id),
+        amount: parseMoney(r.amount as string | number),
+        year: r.year != null ? Number(r.year) : null,
+        month: r.month != null ? Number(r.month) : null,
+        budget_line_id: r.budget_line_id ? String(r.budget_line_id) : null,
+        note: String(r.note ?? ''),
+        created_at: String(r.created_at ?? '')
+    };
+}
+
+export function plannedAmount(base: number, percent: number): number {
+    return Math.round(((base * percent) / 100) * 100) / 100;
+}
+
+export function lineRemaining(base: number, percent: number, sent: number): number {
+    return Math.max(0, plannedAmount(base, percent) - parseMoney(sent));
 }
 
 export function mapExpense(r: Record<string, unknown>): PersonalExpenseRow {

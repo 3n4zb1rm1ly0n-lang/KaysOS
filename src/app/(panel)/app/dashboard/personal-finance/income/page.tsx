@@ -9,13 +9,13 @@ import {
     COMPANY_SOURCE,
     PF_EXPENSES,
     PF_INCOMES,
+    WITHHELD_KINDS,
     fetchCompanyCashNet,
     fmtMoney,
-    mapExpense,
+    incomeNetCash,
     mapIncome,
     monthLabel,
     parseMoney,
-    type PersonalExpenseRow,
     type PersonalIncomeRow
 } from '@/lib/personal-finance';
 
@@ -90,7 +90,15 @@ export default function PersonalIncomePage() {
         () => incomes.reduce((a, r) => a + r.amount, 0),
         [incomes]
     );
-    const remaining = incomeTotal - expenseTotal;
+    const withheldTotal = useMemo(
+        () => incomes.reduce((a, r) => a + Math.min(r.withheld_amount, r.amount), 0),
+        [incomes]
+    );
+    const netCashTotal = useMemo(
+        () => incomes.reduce((a, r) => a + incomeNetCash(r.amount, r.withheld_amount), 0),
+        [incomes]
+    );
+    const remaining = netCashTotal - expenseTotal;
     const companyLinked = incomes.some((r) => r.source === COMPANY_SOURCE);
 
     const bindCompanyMonth = async () => {
@@ -215,11 +223,18 @@ export default function PersonalIncomePage() {
             due_date: string | null;
             is_received: boolean;
             repeats_monthly: boolean;
+            withheld_amount: number;
+            withheld_kind: string;
+            withheld_note: string;
         }>
     ) => {
         const { error: uErr } = await supabase.from(PF_INCOMES).update(patch).eq('id', id);
         if (uErr) {
-            setError(uErr.message);
+            setError(
+                uErr.message.includes('withheld_')
+                    ? 'Bloke/haciz kolonları yok. Supabase’te create_personal_budget_savings.sql çalıştırın.'
+                    : uErr.message
+            );
             return;
         }
         setIncomes((prev) =>
@@ -302,7 +317,14 @@ export default function PersonalIncomePage() {
                         Gelirler
                     </h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Şirket nakitini bağla veya kişisel gelir ekle.{' '}
+                        Şirket nakitini bağla; bloke/haciz düşümüyle net nakiti bütçeye yönlendir.{' '}
+                        <Link
+                            href="/app/dashboard/personal-finance/budget"
+                            className="text-primary hover:underline"
+                        >
+                            Bütçe
+                        </Link>
+                        {' · '}
                         <Link
                             href="/app/dashboard/personal-finance/expenses"
                             className="text-primary hover:underline"
@@ -337,26 +359,34 @@ export default function PersonalIncomePage() {
                 </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Gelir
+                        Brüt gelir
                     </p>
                     <p className="text-lg font-semibold tabular-nums text-primary">
                         {fmtMoney(incomeTotal)}
                     </p>
                 </div>
-                <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
+                <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Gider
+                        Bloke / haciz
                     </p>
-                    <p className="text-lg font-semibold tabular-nums text-red-400">
-                        {fmtMoney(expenseTotal)}
+                    <p className="text-lg font-semibold tabular-nums text-orange-400">
+                        {fmtMoney(withheldTotal)}
+                    </p>
+                </div>
+                <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Net nakit
+                    </p>
+                    <p className="text-lg font-semibold tabular-nums text-cyan-400">
+                        {fmtMoney(netCashTotal)}
                     </p>
                 </div>
                 <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Kalan
+                        Net − gider
                     </p>
                     <p
                         className={`text-lg font-semibold tabular-nums ${
@@ -364,6 +394,9 @@ export default function PersonalIncomePage() {
                         }`}
                     >
                         {fmtMoney(remaining)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Gider {fmtMoney(expenseTotal)}
                     </p>
                 </div>
             </div>
@@ -562,6 +595,98 @@ export default function PersonalIncomePage() {
                                         </label>
                                     </div>
                                 </div>
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Bloke / haciz tutarı
+                                        </label>
+                                        <input
+                                            value={String(row.withheld_amount)}
+                                            inputMode="decimal"
+                                            onChange={(e) =>
+                                                setIncomes((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? {
+                                                                  ...r,
+                                                                  withheld_amount: parseMoney(
+                                                                      e.target.value
+                                                                  )
+                                                              }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                void updateRow(row.id, {
+                                                    withheld_amount: row.withheld_amount
+                                                })
+                                            }
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Kesinti türü
+                                        </label>
+                                        <select
+                                            value={row.withheld_kind}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                setIncomes((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? { ...r, withheld_kind: v }
+                                                            : r
+                                                    )
+                                                );
+                                                void updateRow(row.id, { withheld_kind: v });
+                                            }}
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                        >
+                                            {WITHHELD_KINDS.map((k) => (
+                                                <option key={k.value || 'none'} value={k.value}>
+                                                    {k.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Kesinti notu / alacaklı
+                                        </label>
+                                        <input
+                                            value={row.withheld_note}
+                                            onChange={(e) =>
+                                                setIncomes((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? {
+                                                                  ...r,
+                                                                  withheld_note: e.target.value
+                                                              }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                void updateRow(row.id, {
+                                                    withheld_note: row.withheld_note
+                                                })
+                                            }
+                                            placeholder="Banka blokesi, icra…"
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Net eline geçen:{' '}
+                                    <span className="font-semibold text-cyan-400 tabular-nums">
+                                        {fmtMoney(
+                                            incomeNetCash(row.amount, row.withheld_amount)
+                                        )}
+                                    </span>
+                                </p>
                                 <div className="flex justify-between gap-2">
                                     {isCompany ? (
                                         <button

@@ -27,7 +27,9 @@ import {
     CreditCard,
     Scale,
     Coins,
-    Bot
+    Bot,
+    PieChart,
+    PiggyBank
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -47,6 +49,18 @@ export const PERSONAL_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Gelirler',
         href: '/app/dashboard/personal-finance/income',
         icon: WalletCards
+    },
+    {
+        id: 'pf-budget',
+        label: 'Bütçe',
+        href: '/app/dashboard/personal-finance/budget',
+        icon: PieChart
+    },
+    {
+        id: 'pf-savings',
+        label: 'Birikim',
+        href: '/app/dashboard/personal-finance/savings',
+        icon: PiggyBank
     },
     {
         id: 'pf-expenses',

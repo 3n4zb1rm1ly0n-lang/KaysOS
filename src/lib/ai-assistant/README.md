@@ -13,7 +13,10 @@ Yeni panel sayfası + Supabase tablosu eklerken asistanın görmesi için:
 
 Hazır özet tool’lar:
 - `get_company_monthly_summary` — şirket aylık kazanç
-- `get_personal_finance_summary` — kişisel gelir/gider/borç
+- `get_personal_finance_summary` — kişisel gelir/gider/borç (net nakit = bloke/haciz düşülmüş)
+- `get_budget_savings_summary` — bütçe planı + birikim + yüzde önerisi
 - `get_paket_prim_summary` — paket prim
 - `get_projects_summary` — projeler
 - `list_schema` / `describe_table` — kolon keşfi
+
+SQL: `create_personal_budget_savings.sql` (bloke kolonları + bütçe + birikim tabloları)

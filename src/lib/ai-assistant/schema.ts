@@ -418,7 +418,10 @@ export const AI_SCHEMA: TableSchema[] = [
             { name: 'is_received' },
             { name: 'repeats_monthly' },
             { name: 'note' },
-            { name: 'sort_order' }
+            { name: 'sort_order' },
+            { name: 'withheld_amount', note: 'Bloke/haciz kesintisi' },
+            { name: 'withheld_kind', note: 'empty|block|seizure|other' },
+            { name: 'withheld_note' }
         ]
     },
     {
@@ -460,6 +463,81 @@ export const AI_SCHEMA: TableSchema[] = [
             { name: 'is_paid' },
             { name: 'note' },
             { name: 'sort_order' }
+        ]
+    },
+    {
+        name: 'personal_finance_budget_lines',
+        label: 'Kişisel bütçe satırları',
+        page: '/app/dashboard/personal-finance/budget',
+        hint: 'Aylık yüzde dağılımı',
+        aliases: ['butce', 'budget'],
+        enums: { line_type: ['savings', 'expense', 'debt', 'free'] },
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'updated_at' },
+            { name: 'year' },
+            { name: 'month' },
+            { name: 'name' },
+            { name: 'percent' },
+            { name: 'line_type' },
+            { name: 'linked_savings_id' },
+            { name: 'linked_expense_id' },
+            { name: 'linked_debt_id' },
+            { name: 'sent_amount' },
+            { name: 'note' },
+            { name: 'sort_order' }
+        ]
+    },
+    {
+        name: 'personal_finance_budget_months',
+        label: 'Kişisel bütçe ay',
+        page: '/app/dashboard/personal-finance/budget',
+        hint: 'Taban modu / kapanış',
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'updated_at' },
+            { name: 'year' },
+            { name: 'month' },
+            { name: 'base_mode', note: 'net_income|manual' },
+            { name: 'manual_base' },
+            { name: 'note' },
+            { name: 'is_closed' }
+        ]
+    },
+    {
+        name: 'personal_finance_savings_pots',
+        label: 'Birikim kasaları',
+        page: '/app/dashboard/personal-finance/savings',
+        hint: 'Birikim hedefleri',
+        aliases: ['birikim', 'savings'],
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'updated_at' },
+            { name: 'name' },
+            { name: 'balance' },
+            { name: 'goal_amount' },
+            { name: 'note' },
+            { name: 'sort_order' },
+            { name: 'is_archived' }
+        ]
+    },
+    {
+        name: 'personal_finance_savings_ledger',
+        label: 'Birikim hareket',
+        page: '/app/dashboard/personal-finance/savings',
+        hint: 'Giriş/çıkış defteri',
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'pot_id' },
+            { name: 'amount' },
+            { name: 'year' },
+            { name: 'month' },
+            { name: 'budget_line_id' },
+            { name: 'note' }
         ]
     },
     {

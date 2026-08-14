@@ -8,6 +8,10 @@ import {
     staticDescribe
 } from '@/lib/ai-assistant/schema';
 import {
+    companyMonthlySummary,
+    personalFinanceSummary
+} from '@/lib/ai-assistant/finance-summaries';
+import {
     COMPANY_FIXED_MONTHLY,
     mergeMonthFromRows,
     monthDateRange,
@@ -129,6 +133,38 @@ export const ASSISTANT_TOOLS = [
     {
         type: 'function' as const,
         function: {
+            name: 'get_company_monthly_summary',
+            description:
+                'Şirket Aylık kazanç özeti — panel ile aynı formüller. gross_amount KDV DAHİL. cashNet, matrah, tevfikat, KDV bakiyesi, gider kırılımı. year/month yoksa bu ay. Finans sorularında query_table ile kendin hesaplama; bu aracı kullan.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    year: { type: 'integer' },
+                    month: { type: 'integer', description: '1–12' }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'get_personal_finance_summary',
+            description:
+                'Kişisel finans özeti (gelir/gider/borç) — panel ile aynı. Bütçe: Σincome.amount − Σexpense.amount (paid kısmi ödeme bütçeyi düşürmez). company_cash = şirket cashNet kopyası. year/month yoksa bu ay.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    year: { type: 'integer' },
+                    month: { type: 'integer', description: '1–12' }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function' as const,
+        function: {
             name: 'get_projects_summary',
             description:
                 'Projeler özeti. Status değerleri (İngilizce kod): idea=Fikir, potential=Potansiyel, ongoing=Devam ediyor/aktif, on_hold=Yarıda/Beklemede, completed=Bitti, cancelled=İptal. "aktif" → ongoing; "bekleyen" → on_hold. Kolon uydurma; bu aracı kullan.',
@@ -150,7 +186,7 @@ export const ASSISTANT_TOOLS = [
         function: {
             name: 'query_table',
             description:
-                'Bir tablodan satır okur (yalnızca SELECT). Projeler için get_projects_summary tercih et. Paket prim için get_paket_prim_summary. projects.status yalnızca: idea, potential, ongoing, on_hold, completed, cancelled.',
+                'Bir tablodan satır okur (yalnızca SELECT). Finans hesapları için: get_company_monthly_summary / get_personal_finance_summary / get_paket_prim_summary. Ham satır okurken kolon uydurma; describe_table kullan.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -439,7 +475,7 @@ export async function runAssistantTool(
                 page: t.page,
                 hint: t.hint
             })),
-            tip: 'Kolonlar için list_schema veya describe_table kullan. Paket prim → get_paket_prim_summary. Projeler → get_projects_summary.'
+            tip: 'Kolonlar: list_schema/describe_table. Paket prim→get_paket_prim_summary. Projeler→get_projects_summary. Şirket aylık→get_company_monthly_summary. Kişisel→get_personal_finance_summary.'
         });
     }
 
@@ -447,6 +483,26 @@ export async function runAssistantTool(
         const year = typeof args.year === 'number' ? args.year : Number(args.year);
         const month = typeof args.month === 'number' ? args.month : Number(args.month);
         return paketPrimSummary(
+            db,
+            Number.isFinite(year) ? year : undefined,
+            Number.isFinite(month) ? month : undefined
+        );
+    }
+
+    if (name === 'get_company_monthly_summary') {
+        const year = typeof args.year === 'number' ? args.year : Number(args.year);
+        const month = typeof args.month === 'number' ? args.month : Number(args.month);
+        return companyMonthlySummary(
+            db,
+            Number.isFinite(year) ? year : undefined,
+            Number.isFinite(month) ? month : undefined
+        );
+    }
+
+    if (name === 'get_personal_finance_summary') {
+        const year = typeof args.year === 'number' ? args.year : Number(args.year);
+        const month = typeof args.month === 'number' ? args.month : Number(args.month);
+        return personalFinanceSummary(
             db,
             Number.isFinite(year) ? year : undefined,
             Number.isFinite(month) ? month : undefined

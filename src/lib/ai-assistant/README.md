@@ -8,7 +8,12 @@ Yeni panel sayfası + Supabase tablosu eklerken asistanın görmesi için:
    - `label`, `page` (panel yolu)
    - `columns` (tüm kolonlar)
    - isteğe bağlı `enums`, `aliases`
-3. Karmaşık özet gerekiyorsa `src/lib/ai-assistant/tools.ts` içine özel tool ekle (ör. `get_paket_prim_summary`).
-4. Canlı kolon keşfi için bir kez: `create_ai_describe_table.sql` (Supabase SQL Editor).
+3. Karmaşık özet gerekiyorsa `tools.ts` + gerekirse `finance-summaries.ts` içine özel tool ekle.
+4. Canlı kolon: `create_ai_describe_table.sql`
 
-Asistan araçları: `list_schema`, `describe_table`, `query_table`.
+Hazır özet tool’lar:
+- `get_company_monthly_summary` — şirket aylık kazanç
+- `get_personal_finance_summary` — kişisel gelir/gider/borç
+- `get_paket_prim_summary` — paket prim
+- `get_projects_summary` — projeler
+- `list_schema` / `describe_table` — kolon keşfi

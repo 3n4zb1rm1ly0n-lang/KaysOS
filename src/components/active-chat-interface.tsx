@@ -25,10 +25,10 @@ function fmtUsd(n: number): string {
 }
 
 const SUGGESTIONS = [
+    'Bu ay şirket aylık net (nakit) ne?',
+    'Bu ay kişisel bütçe özetini çıkar.',
     'Bu ay paket prim özetini yorumla.',
-    'Aylık kazançta son 3 ayı karşılaştır.',
-    'Yaklaşan domain yenilemelerini listele.',
-    'Aktif ve bekleyen projeleri özetle.'
+    'Aktif ve bekleyen projeleri listele.'
 ];
 
 export function ActiveChatInterface({

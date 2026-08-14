@@ -43,6 +43,7 @@ export function ActiveChatInterface({
     const [loading, setLoading] = useState(false);
     const [ready, setReady] = useState<boolean | null>(null);
     const [model, setModel] = useState('gpt-4o-mini');
+    const [dataHint, setDataHint] = useState<string | null>(null);
     const endRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -51,6 +52,23 @@ export function ActiveChatInterface({
             .then((d) => {
                 setReady(Boolean(d.ok));
                 if (typeof d.model === 'string') setModel(d.model);
+                const sb = d.supabase as
+                    | {
+                          paket_prim_days?: boolean;
+                          paket_prim_error?: string | null;
+                          has_service_role?: boolean;
+                      }
+                    | undefined;
+                if (sb && sb.paket_prim_days === false) {
+                    setDataHint(
+                        sb.paket_prim_error ||
+                            'Paket prim tablosuna erişilemiyor. create_paket_prim_days.sql ve Vercel Supabase env’lerini kontrol et.'
+                    );
+                } else if (sb && sb.has_service_role === false) {
+                    setDataHint(
+                        'SUPABASE_SERVICE_ROLE_KEY Vercel’de yok; anon ile denenecek. Okuma sorununda service role ekle.'
+                    );
+                }
             })
             .catch(() => setReady(false));
     }, []);
@@ -142,6 +160,12 @@ export function ActiveChatInterface({
                             dosyasına koy, Cursor terminalinde <code className="text-xs">npm run
                             dev</code>’i durdurup yeniden başlat. Canlı için yerel .env yetmez.
                         </p>
+                    </div>
+                )}
+
+                {dataHint && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                        {dataHint}
                     </div>
                 )}
 

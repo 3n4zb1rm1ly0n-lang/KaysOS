@@ -209,6 +209,24 @@ export function MobileNav() {
                                 <Calendar className="w-5 h-5 shrink-0" />
                                 <span>Takvim</span>
                             </Link>
+
+                            <Link
+                                href="/app/dashboard/assistant"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/assistant')}
+                            >
+                                <Bot className="w-5 h-5 shrink-0" />
+                                <span>Asistan</span>
+                            </Link>
+
+                            <Link
+                                href="/app/dashboard/ai-usage"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/ai-usage')}
+                            >
+                                <Coins className="w-5 h-5 shrink-0" />
+                                <span>AI kullanım</span>
+                            </Link>
                         </nav>
 
                         <div className="pt-6 border-t mt-auto space-y-2">

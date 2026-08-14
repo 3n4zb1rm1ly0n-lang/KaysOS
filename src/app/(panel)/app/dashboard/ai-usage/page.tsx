@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Coins, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { AI_MONTHLY_BUDGET_USD } from '@/lib/ai-assistant/pricing';
 
 type UsageRow = {
     id: string;
@@ -18,8 +19,11 @@ type UsageRow = {
     error: string | null;
 };
 
-function fmtUsd(n: number): string {
-    return `$${n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`;
+function fmtUsd(n: number, digits = 4): string {
+    return `$${n.toLocaleString('en-US', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: Math.max(digits, 2)
+    })}`;
 }
 
 function startOfTodayIso(): string {
@@ -37,30 +41,64 @@ function startOfMonthIso(): string {
 
 export default function AiUsagePage() {
     const [rows, setRows] = useState<UsageRow[]>([]);
+    const [monthCost, setMonthCost] = useState(0);
+    const [monthTokens, setMonthTokens] = useState(0);
+    const [monthCalls, setMonthCalls] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const budget = AI_MONTHLY_BUDGET_USD;
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
-        const { data, error: err } = await supabase
-            .from('ai_usage_logs')
-            .select(
-                'id, created_at, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, tool_rounds, ok, error'
-            )
-            .order('created_at', { ascending: false })
-            .limit(200);
+        const monthIso = startOfMonthIso();
+
+        const [listRes, monthRes] = await Promise.all([
+            supabase
+                .from('ai_usage_logs')
+                .select(
+                    'id, created_at, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, tool_rounds, ok, error'
+                )
+                .order('created_at', { ascending: false })
+                .limit(200),
+            supabase
+                .from('ai_usage_logs')
+                .select('cost_usd, total_tokens')
+                .gte('created_at', monthIso)
+                .limit(5000)
+        ]);
+
         setLoading(false);
-        if (err) {
+
+        if (listRes.error) {
             setError(
-                err.message.includes('ai_usage_logs') || err.code === '42P01'
+                listRes.error.message.includes('ai_usage_logs') || listRes.error.code === '42P01'
                     ? 'Tablo yok. Supabase SQL Editor’da create_ai_usage_logs.sql çalıştır.'
-                    : err.message
+                    : listRes.error.message
             );
             setRows([]);
+            setMonthCost(0);
+            setMonthTokens(0);
+            setMonthCalls(0);
             return;
         }
-        setRows((data as UsageRow[]) || []);
+
+        setRows((listRes.data as UsageRow[]) || []);
+
+        if (monthRes.error) {
+            setMonthCost(0);
+            setMonthTokens(0);
+            setMonthCalls(0);
+        } else {
+            const monthRows = monthRes.data || [];
+            setMonthCalls(monthRows.length);
+            setMonthCost(
+                monthRows.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0)
+            );
+            setMonthTokens(
+                monthRows.reduce((s, r) => s + (Number(r.total_tokens) || 0), 0)
+            );
+        }
     }, []);
 
     useEffect(() => {
@@ -68,11 +106,11 @@ export default function AiUsagePage() {
     }, [load]);
 
     const todayIso = startOfTodayIso();
-    const monthIso = startOfMonthIso();
 
-    const stats = useMemo(() => {
-        const sum = (list: UsageRow[]) =>
-            list.reduce(
+    const todayStats = useMemo(() => {
+        return rows
+            .filter((r) => r.created_at >= todayIso)
+            .reduce(
                 (acc, r) => {
                     acc.tokens += Number(r.total_tokens) || 0;
                     acc.cost += Number(r.cost_usd) || 0;
@@ -81,12 +119,12 @@ export default function AiUsagePage() {
                 },
                 { tokens: 0, cost: 0, calls: 0 }
             );
-        return {
-            today: sum(rows.filter((r) => r.created_at >= todayIso)),
-            month: sum(rows.filter((r) => r.created_at >= monthIso)),
-            all: sum(rows)
-        };
-    }, [rows, todayIso, monthIso]);
+    }, [rows, todayIso]);
+
+    const budgetPct = budget > 0 ? Math.min(100, (monthCost / budget) * 100) : 0;
+    const remaining = Math.max(0, budget - monthCost);
+    const barTone =
+        budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 70 ? 'bg-amber-500' : 'bg-primary';
 
     return (
         <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -115,24 +153,63 @@ export default function AiUsagePage() {
                 </div>
             )}
 
+            <section className="rounded-xl border border-border p-4 md:p-5 space-y-3">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                        <div className="text-xs text-muted-foreground">Aylık bütçe</div>
+                        <div className="text-lg font-semibold tabular-nums mt-0.5">
+                            {fmtUsd(monthCost, 4)}
+                            <span className="text-muted-foreground font-normal text-sm">
+                                {' '}
+                                / {fmtUsd(budget, 2)}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground tabular-nums">
+                        <div>
+                            %{budgetPct.toFixed(1)} kullanıldı
+                        </div>
+                        <div>Kalan {fmtUsd(remaining, 4)}</div>
+                    </div>
+                </div>
+                <div
+                    className="h-3 w-full rounded-full bg-secondary/60 overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={Math.round(budgetPct)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Aylık AI bütçe kullanımı"
+                >
+                    <div
+                        className={`h-full rounded-full transition-[width] duration-500 ease-out ${barTone}`}
+                        style={{ width: `${budgetPct}%` }}
+                    />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                    Bu ayın asistan loglarından hesaplanır (tahmini USD). OpenAI hesabındaki $
+                    {budget.toFixed(0)} limit ile hizalı; limit değişince kodda{' '}
+                    <code className="text-[10px]">AI_MONTHLY_BUDGET_USD</code> güncelle.
+                </p>
+            </section>
+
             <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Kpi
                     title="Bugün"
-                    tokens={stats.today.tokens}
-                    cost={stats.today.cost}
-                    calls={stats.today.calls}
+                    tokens={todayStats.tokens}
+                    cost={todayStats.cost}
+                    calls={todayStats.calls}
                 />
                 <Kpi
                     title="Bu ay"
-                    tokens={stats.month.tokens}
-                    cost={stats.month.cost}
-                    calls={stats.month.calls}
+                    tokens={monthTokens}
+                    cost={monthCost}
+                    calls={monthCalls}
                 />
                 <Kpi
                     title="Son 200 istek"
-                    tokens={stats.all.tokens}
-                    cost={stats.all.cost}
-                    calls={stats.all.calls}
+                    tokens={rows.reduce((s, r) => s + (Number(r.total_tokens) || 0), 0)}
+                    cost={rows.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0)}
+                    calls={rows.length}
                 />
             </section>
 

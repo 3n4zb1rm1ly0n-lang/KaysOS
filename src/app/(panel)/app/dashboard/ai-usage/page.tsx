@@ -211,7 +211,7 @@ export default function AiUsagePage() {
                     </div>
                 </div>
                 <div
-                    className="h-3 w-full rounded-full bg-secondary/60 overflow-hidden"
+                    className="h-4 w-full rounded-full bg-secondary border border-border overflow-hidden"
                     role="progressbar"
                     aria-valuenow={Math.round(budgetPct)}
                     aria-valuemin={0}
@@ -219,7 +219,9 @@ export default function AiUsagePage() {
                     aria-label="AI bütçe kullanımı"
                 >
                     <div
-                        className={`h-full rounded-full transition-[width] duration-500 ease-out ${barTone}`}
+                        className={`h-full rounded-full transition-[width] duration-500 ease-out ${barTone} ${
+                            budgetPct > 0 && budgetPct < 2 ? 'min-w-[6px]' : ''
+                        }`}
                         style={{ width: `${budgetPct}%` }}
                     />
                 </div>

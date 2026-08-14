@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, Package, Send, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { FinancePie } from '@/components/panel/finance-pie';
 import {
     COMPANY_FIXED_MONTHLY,
     FULL_MONTH_WORK_DAYS,
@@ -541,6 +542,27 @@ export default function PaketPrimPage() {
     );
     const today = todayStr();
 
+    const earningsPie = useMemo(
+        () => [
+            { name: 'Sabit ücret', value: summary.fixedPay, color: '#0891b2' },
+            { name: 'Günlük prim', value: summary.dailyPrimTotal, color: '#16a34a' },
+            { name: 'Aylık bonus', value: summary.monthlyBonusAmount, color: '#c026d3' }
+        ],
+        [summary.fixedPay, summary.dailyPrimTotal, summary.monthlyBonusAmount]
+    );
+
+    const daysPie = useMemo(() => {
+        const emptyElapsed = Math.max(
+            0,
+            summary.elapsedDays - summary.workDays - summary.leaveDays
+        );
+        return [
+            { name: 'İş günü', value: summary.workDays, color: '#16a34a' },
+            { name: 'İzin', value: summary.leaveDays, color: '#f59e0b' },
+            { name: 'Boş (bugüne)', value: emptyElapsed, color: '#64748b' }
+        ];
+    }, [summary.elapsedDays, summary.workDays, summary.leaveDays]);
+
     return (
         <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
             <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -803,6 +825,74 @@ export default function PaketPrimPage() {
                     {status}
                 </div>
             )}
+
+            {/* Özet pie — sayfa başında hızlı bakış */}
+            <section className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-border p-4">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                        <div>
+                            <h2 className="text-sm font-semibold">Kazanç dağılımı</h2>
+                            <p className="text-xs text-muted-foreground">
+                                Toplam {fmtMoney(summary.grandTotal)}
+                                {summary.franchiseTotal > 0
+                                    ? ` · franchise −${fmtMoney(summary.franchiseTotal)}`
+                                    : ''}
+                            </p>
+                        </div>
+                    </div>
+                    <FinancePie
+                        data={earningsPie}
+                        emptyLabel="Henüz kazanç yok"
+                    />
+                    <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-cyan-600" /> Sabit{' '}
+                            {fmtMoney(summary.fixedPay)}
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-green-600" /> Prim{' '}
+                            {fmtMoney(summary.dailyPrimTotal)}
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-fuchsia-600" /> Bonus{' '}
+                            {fmtMoney(summary.monthlyBonusAmount)}
+                        </li>
+                    </ul>
+                </div>
+                <div className="rounded-xl border border-border p-4">
+                    <div className="mb-1">
+                        <h2 className="text-sm font-semibold">Gün dağılımı</h2>
+                        <p className="text-xs text-muted-foreground">
+                            Bugüne kadar {summary.elapsedDays}/{summary.calendarDays} gün ·{' '}
+                            {summary.totalPackages} paket
+                        </p>
+                    </div>
+                    <FinancePie
+                        data={daysPie}
+                        emptyLabel="Ay henüz başlamadı"
+                        formatValue={(v) =>
+                            `${Number(v).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} gün`
+                        }
+                    />
+                    <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-green-600" /> İş{' '}
+                            {summary.workDays}
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" /> İzin{' '}
+                            {summary.leaveDays}
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-slate-500" /> Boş{' '}
+                            {Math.max(
+                                0,
+                                summary.elapsedDays - summary.workDays - summary.leaveDays
+                            )}
+                        </li>
+                    </ul>
+                </div>
+            </section>
 
             {/* KPI */}
             <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">

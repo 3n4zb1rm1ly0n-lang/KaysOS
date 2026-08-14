@@ -22,10 +22,12 @@ const FALLBACK = [
 
 export function FinancePie({
     data,
-    emptyLabel = 'Veri yok'
+    emptyLabel = 'Veri yok',
+    formatValue
 }: {
     data: PieSlice[];
     emptyLabel?: string;
+    formatValue?: (value: number) => string;
 }) {
     const slices = data.filter((d) => d.value > 0.0001);
     if (slices.length === 0) {
@@ -35,6 +37,13 @@ export function FinancePie({
             </div>
         );
     }
+
+    const format =
+        formatValue ??
+        ((value: number) =>
+            `₺${Number(value).toLocaleString('tr-TR', {
+                maximumFractionDigits: 2
+            })}`);
 
     return (
         <div className="h-48 w-full">
@@ -56,11 +65,7 @@ export function FinancePie({
                         ))}
                     </Pie>
                     <Tooltip
-                        formatter={(value: number) =>
-                            `₺${Number(value).toLocaleString('tr-TR', {
-                                maximumFractionDigits: 2
-                            })}`
-                        }
+                        formatter={(value: number) => format(Number(value))}
                         contentStyle={{
                             background: 'hsl(var(--card))',
                             border: '1px solid hsl(var(--border))',

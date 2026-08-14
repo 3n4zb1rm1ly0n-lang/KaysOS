@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
         return response;
     }
 
-    if (pathname.startsWith('/api/admin')) {
+    if (pathname.startsWith('/api/admin') || pathname.startsWith('/api/assistant')) {
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -43,5 +43,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ['/login', '/app/:path*', '/dashboard/:path*', '/api/admin/:path*']
+    matcher: [
+        '/login',
+        '/app/:path*',
+        '/dashboard/:path*',
+        '/api/admin/:path*',
+        '/api/assistant/:path*'
+    ]
 };

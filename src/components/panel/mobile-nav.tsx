@@ -17,7 +17,9 @@ import {
     ChevronDown,
     ChevronRight,
     Mail,
-    UserRound
+    UserRound,
+    Bot,
+    Coins
 } from 'lucide-react';
 import { COMPANY_FINANCE_NAV_ITEMS, PERSONAL_FINANCE_NAV_ITEMS } from './sidebar';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';

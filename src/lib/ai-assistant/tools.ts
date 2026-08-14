@@ -40,7 +40,7 @@ function resolveTable(raw: string): string | null {
     if (AI_READ_TABLE_NAMES.has(t)) return t;
     const alias = TABLE_ALIASES[t.toLowerCase().replace(/\s+/g, '_')];
     if (alias && AI_READ_TABLE_NAMES.has(alias)) return alias;
-    const fuzzy = [...AI_READ_TABLE_NAMES].find(
+    const fuzzy = Array.from(AI_READ_TABLE_NAMES).find(
         (n) => n.endsWith(t) || n.includes(t) || t.includes(n)
     );
     return fuzzy ?? null;

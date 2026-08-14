@@ -53,36 +53,37 @@ function inRange(date: string | null, start: string, end: string): date is strin
     return !!date && date >= start && date <= end;
 }
 
+/** Her kategori net, doygun ve birbirinden ayırt edilebilir */
 const EVENT_STYLES: Record<EventType, string> = {
-    domains: 'bg-teal-500/10 text-teal-400 border-teal-500/25',
-    projects: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25',
-    debts: 'bg-rose-500/10 text-rose-300 border-rose-500/25',
-    expenses: 'bg-amber-500/10 text-amber-300 border-amber-500/25',
-    incomes: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25',
-    tax: 'bg-orange-500/10 text-orange-300 border-orange-500/25',
-    bagkur: 'bg-sky-500/10 text-sky-300 border-sky-500/25',
-    fuel: 'bg-yellow-500/10 text-yellow-200 border-yellow-500/25',
-    subscriptions: 'bg-violet-500/10 text-violet-300 border-violet-500/25'
+    domains: 'bg-cyan-600 text-white border-cyan-400/80 shadow-sm shadow-cyan-900/40',
+    projects: 'bg-blue-700 text-white border-blue-400/80 shadow-sm shadow-blue-900/40',
+    debts: 'bg-red-600 text-white border-red-400/80 shadow-sm shadow-red-900/40',
+    expenses: 'bg-amber-500 text-black border-amber-300 shadow-sm shadow-amber-900/30',
+    incomes: 'bg-green-600 text-white border-green-400/80 shadow-sm shadow-green-900/40',
+    tax: 'bg-orange-700 text-white border-orange-400/80 shadow-sm shadow-orange-900/40',
+    bagkur: 'bg-sky-500 text-black border-sky-200 shadow-sm shadow-sky-900/30',
+    fuel: 'bg-lime-400 text-black border-lime-200 shadow-sm shadow-lime-900/30',
+    subscriptions: 'bg-fuchsia-600 text-white border-fuchsia-300/80 shadow-sm shadow-fuchsia-900/40'
 };
 
 const LEGEND: { type: EventType; label: string; color: string }[] = [
-    { type: 'domains', label: 'Domainler', color: 'bg-teal-500' },
-    { type: 'projects', label: 'Projeler', color: 'bg-indigo-500' },
-    { type: 'debts', label: 'Borçlar', color: 'bg-rose-500' },
+    { type: 'domains', label: 'Domainler', color: 'bg-cyan-600' },
+    { type: 'projects', label: 'Projeler', color: 'bg-blue-700' },
+    { type: 'debts', label: 'Borçlar', color: 'bg-red-600' },
     { type: 'expenses', label: 'Giderler', color: 'bg-amber-500' },
-    { type: 'incomes', label: 'Gelirler', color: 'bg-emerald-500' },
-    { type: 'tax', label: 'Vergi taksit', color: 'bg-orange-500' },
+    { type: 'incomes', label: 'Gelirler', color: 'bg-green-600' },
+    { type: 'tax', label: 'Vergi taksit', color: 'bg-orange-700' },
     { type: 'bagkur', label: 'Bağkur', color: 'bg-sky-500' },
-    { type: 'fuel', label: 'Benzin', color: 'bg-yellow-500' },
-    { type: 'subscriptions', label: 'Abonelik', color: 'bg-violet-500' }
+    { type: 'fuel', label: 'Benzin', color: 'bg-lime-400' },
+    { type: 'subscriptions', label: 'Abonelik', color: 'bg-fuchsia-600' }
 ];
 
 const EventBadge = ({ type, title, amount }: { type: EventType; title: string; amount: string }) => (
     <div
-        className={`text-[10px] px-1.5 py-0.5 rounded border mb-1 truncate ${EVENT_STYLES[type]}`}
+        className={`text-[10px] px-1.5 py-0.5 rounded-md border mb-1 truncate font-medium ${EVENT_STYLES[type]}`}
         title={`${title} — ${amount}`}
     >
-        <span className="font-semibold">{amount}</span> — {title}
+        <span className="font-bold">{amount}</span> — {title}
     </div>
 );
 
@@ -505,10 +506,14 @@ export default function CalendarPage() {
                 </div>
             </div>
 
-            <div className="flex gap-3 text-sm flex-wrap">
+            <div className="flex gap-2 text-sm flex-wrap">
                 {LEGEND.map((item) => (
-                    <div key={item.type} className="flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full ${item.color}`} /> {item.label}
+                    <div
+                        key={item.type}
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-semibold ${EVENT_STYLES[item.type]}`}
+                    >
+                        <span className={`w-2.5 h-2.5 rounded-full ring-1 ring-white/40 ${item.color}`} />
+                        {item.label}
                     </div>
                 ))}
             </div>

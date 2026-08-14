@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, Package, Send, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import {
-    DAILY_FIXED,
+    COMPANY_FIXED_MONTHLY,
     FULL_MONTH_WORK_DAYS,
-    HOURLY_RATE,
-    HOURS_PER_DAY,
     type BonusTip,
     type PackageDayEntry,
     applyDefaultMondayLeave,
+    calendarDaysInMonth,
+    dailyFixedForCalendarDays,
     dailyPrim,
     emptyMonthEntries,
     formatDayLabel,
@@ -200,7 +200,10 @@ export default function PaketPrimPage() {
         void loadMonth(year, monthIndex);
     }, [year, monthIndex, loadMonth]);
 
-    const summary = useMemo(() => summarizeMonth(entries, year, monthNum), [entries, year, monthNum]);
+    const summary = useMemo(
+        () => summarizeMonth(entries, year, monthNum, todayStr()),
+        [entries, year, monthNum]
+    );
 
     const remainDays = useMemo(
         () => remainingWorkDaySlots(entries, todayStr()),
@@ -527,7 +530,15 @@ export default function PaketPrimPage() {
     }, [scenarioDaysInput, autoWorkDays]);
 
     const pkgNum = Math.max(0, parseFloat(scenarioPkg.replace(',', '.')) || 0);
-    const scenario = projectScenario(scenarioMode, pkgNum, scenarioTip, scenarioWorkDays);
+    const monthCalendarDays = calendarDaysInMonth(year, monthIndex);
+    const dayFixedShare = dailyFixedForCalendarDays(monthCalendarDays);
+    const scenario = projectScenario(
+        scenarioMode,
+        pkgNum,
+        scenarioTip,
+        scenarioWorkDays,
+        monthCalendarDays
+    );
     const today = todayStr();
 
     return (
@@ -542,8 +553,8 @@ export default function PaketPrimPage() {
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight">Paket prim takibi</h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Günlük paket + Hemen/Sanal seçimi. Sabit ücret {HOURLY_RATE} TL ×{' '}
-                        {HOURS_PER_DAY} saat = {fmtMoney(DAILY_FIXED)} / iş günü.
+                        Günlük paket + Hemen/Sanal seçimi. Aylık sabit {fmtMoney(COMPANY_FIXED_MONTHLY)}{' '}
+                        (izin dahil, {monthCalendarDays} gün · ~{fmtMoney2(dayFixedShare)}/gün).
                     </p>
                 </div>
 
@@ -798,7 +809,7 @@ export default function PaketPrimPage() {
                 <Kpi
                     label="Sabit ücret"
                     value={fmtMoney(summary.fixedPay)}
-                    hint={`${summary.workDays} iş günü`}
+                    hint={`${summary.elapsedDays}/${summary.calendarDays} gün (izin dahil) · ~${fmtMoney2(dayFixedShare)}/gün`}
                 />
                 <Kpi
                     label="Günlük primler"
@@ -824,7 +835,7 @@ export default function PaketPrimPage() {
                 <Kpi
                     label="Toplam kazanç"
                     value={fmtMoney(summary.grandTotal)}
-                    hint="Sabit + prim + bonus"
+                    hint="Bugüne kadar · sabit + prim + bonus"
                     emphasize
                 />
             </section>
@@ -905,8 +916,7 @@ export default function PaketPrimPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {targetRows.map((row) => {
-                                    const projectedFixed =
-                                        summary.fixedPay + remainDays * DAILY_FIXED;
+                                    const projectedFixed = summary.monthFixedFull;
                                     const extraPrim =
                                         !row.reached &&
                                         row.perDay != null &&
@@ -959,8 +969,9 @@ export default function PaketPrimPage() {
                         </table>
                     </div>
                     <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
-                        Pkt/gün = kalan paket ÷ kalan iş günü. Ay sonu = sabit + günlük prim
-                        (pkt/gün × {scenarioTip}) + bonus.
+                        Pkt/gün = kalan paket ÷ kalan iş günü. Ay sonu = aylık sabit (
+                        {fmtMoney(COMPANY_FIXED_MONTHLY)}, izin dahil) + günlük prim (pkt/gün ×{' '}
+                        {scenarioTip}) + bonus.
                     </p>
                 </div>
 
@@ -1037,6 +1048,7 @@ export default function PaketPrimPage() {
                                 leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
                                 locked={monthClosed}
+                                dailyFixed={dayFixedShare}
                                 onSaveWork={saveWorkDay}
                                 onLeave={() => void setLeave(entry.date)}
                                 onClear={() => void clearDay(entry.date)}
@@ -1050,9 +1062,9 @@ export default function PaketPrimPage() {
                 <div>
                     <h2 className="text-sm font-semibold">Hedef simülatörü</h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                        İzinler düşülmüş tam ay · seçili prim tablosu (
-                        {scenarioTip === 'sanal' ? 'Sanal' : 'Hemen'}). Aylık modda günlük
-                        paket = yuvarlanmış ortalama.
+                        Prim iş gününe göre; sabit ücret ayın {monthCalendarDays} günü (
+                        {fmtMoney(COMPANY_FIXED_MONTHLY)}, izin dahil). Aylık modda günlük paket
+                        = yuvarlanmış ortalama.
                     </p>
                 </div>
 
@@ -1159,6 +1171,9 @@ export default function PaketPrimPage() {
                     <div>
                         <div className="text-xs text-muted-foreground">Sabit</div>
                         <div className="font-medium tabular-nums">{fmtMoney(scenario.fixedPay)}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                            {monthCalendarDays} gün, izin dahil
+                        </div>
                     </div>
                     <div>
                         <div className="text-xs text-muted-foreground">Günlük primler</div>
@@ -1248,6 +1263,7 @@ function DayRow({
     leaveAllowed,
     saving,
     locked,
+    dailyFixed,
     onSaveWork,
     onLeave,
     onClear
@@ -1257,6 +1273,7 @@ function DayRow({
     leaveAllowed: boolean;
     saving: boolean;
     locked: boolean;
+    dailyFixed: number;
     onSaveWork: (date: string, packages: number, tip: BonusTip) => void;
     onLeave: () => void;
     onClear: () => void;
@@ -1299,7 +1316,7 @@ function DayRow({
             {isLeave ? (
                 <div className="flex-1 flex items-center justify-between gap-3">
                     <span className="text-sm text-muted-foreground">
-                        Bu gün izin — sabit ve prim yok
+                        Bu gün izin — prim yok, sabit ~{fmtMoney2(dailyFixed)} (aylığa dahil)
                     </span>
                     <button
                         type="button"
@@ -1374,12 +1391,12 @@ function DayRow({
                                 {fmtMoney(next.nextAmount)}
                             </div>
                         )}
-                        {isWork && (
-                            <div className="text-foreground/80">+ {fmtMoney(DAILY_FIXED)} sabit</div>
-                        )}
+                        <div className="text-foreground/80">
+                            + {fmtMoney2(dailyFixed)} sabit (aylık pay)
+                        </div>
                         {isWork && (
                             <div className="font-semibold text-primary tabular-nums">
-                                Toplam: {fmtMoney(prim + DAILY_FIXED)}
+                                Toplam: {fmtMoney2(prim + dailyFixed)}
                             </div>
                         )}
                     </div>

@@ -19,10 +19,37 @@ export type PrimBracket = {
 
 export const HOURLY_RATE = 177;
 export const HOURS_PER_DAY = 12;
-export const DAILY_FIXED = HOURLY_RATE * HOURS_PER_DAY; // 2.124 TL
+export const DAILY_FIXED = HOURLY_RATE * HOURS_PER_DAY; // 2.124 TL (26 iş günü kökeni)
 export const FULL_MONTH_WORK_DAYS = 26;
-/** Şirket rakamı (1 TL yuvarlama); hesapta günlük sabit kullanılır */
+/** Aylık sabit: izin dahil ayın tüm günleri. 26 × 2.124 = 55.224 → şirket 55.223 */
 export const COMPANY_FIXED_MONTHLY = 55_223;
+
+/** Ayın takvim günü (28–31). Sabit ücret bu güne bölünür. */
+export function calendarDaysInMonth(year: number, monthIndex: number): number {
+    return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+export function dailyFixedForCalendarDays(calendarDays: number): number {
+    if (calendarDays <= 0) return 0;
+    return COMPANY_FIXED_MONTHLY / calendarDays;
+}
+
+/** Tam ay sabit ücreti (izin / boş / çalışılan ayrımı yok). */
+export function monthFixedPay(calendarDays: number): number {
+    return calendarDays > 0 ? COMPANY_FIXED_MONTHLY : 0;
+}
+
+function roundMoney(n: number): number {
+    return Math.round(n * 100) / 100;
+}
+
+/** Ayın bugüne kadarki günleri kadar sabit (gelecek gün yok). Ay sonunda tam 55.223. */
+export function accruedFixedPay(calendarDays: number, elapsedDays: number): number {
+    if (calendarDays <= 0 || elapsedDays <= 0) return 0;
+    const days = Math.min(elapsedDays, calendarDays);
+    return roundMoney(COMPANY_FIXED_MONTHLY * (days / calendarDays));
+}
+
 export const MONTHLY_FRANCHISE = 1_200;
 export const WORK_START_DATE = '2026-07-24';
 
@@ -173,6 +200,9 @@ export type MonthSummary = {
     leaveDays: number;
     totalPackages: number;
     fixedPay: number;
+    monthFixedFull: number;
+    elapsedDays: number;
+    calendarDays: number;
     dailyPrimTotal: number;
     monthlyBonusAmount: number;
     grandTotal: number;
@@ -183,14 +213,22 @@ export type MonthSummary = {
     avgPackagesPerWorkDay: number;
 };
 
-export function summarizeMonth(entries: PackageDayEntry[], year?: number, month?: number): MonthSummary {
+export function summarizeMonth(
+    entries: PackageDayEntry[],
+    year?: number,
+    month?: number,
+    today = new Date().toISOString().slice(0, 10)
+): MonthSummary {
     let workDays = 0;
     let leaveDays = 0;
     let totalPackages = 0;
     let dailyPrimTotal = 0;
     let lastWork: PackageDayEntry | null = null;
+    let elapsedDays = 0;
 
     for (const e of entries) {
+        if (e.date > today) continue;
+        elapsedDays += 1;
         if (e.status === 'leave') {
             leaveDays += 1;
             continue;
@@ -202,7 +240,9 @@ export function summarizeMonth(entries: PackageDayEntry[], year?: number, month?
         lastWork = e;
     }
 
-    const fixedPay = workDays * DAILY_FIXED;
+    const calendarDays = entries.length;
+    const monthFixedFull = monthFixedPay(calendarDays);
+    const fixedPay = accruedFixedPay(calendarDays, elapsedDays);
     const monthlyBonusAmount = monthlyBonus(totalPackages);
     const nextDailyHint = lastWork
         ? nextDailyThreshold(lastWork.packages, lastWork.tip)
@@ -228,6 +268,9 @@ export function summarizeMonth(entries: PackageDayEntry[], year?: number, month?
         leaveDays,
         totalPackages,
         fixedPay,
+        monthFixedFull,
+        elapsedDays,
+        calendarDays,
         dailyPrimTotal,
         monthlyBonusAmount,
         grandTotal: fixedPay + dailyPrimTotal + monthlyBonusAmount,
@@ -272,16 +315,20 @@ export function projectScenario(
     mode: ScenarioMode,
     packageInput: number,
     tip: BonusTip,
-    workDays: number
+    workDays: number,
+    calendarDays: number
 ): ScenarioResult {
     const days = Math.max(0, Math.floor(workDays));
     const input = Math.max(0, packageInput);
+    const calDays = Math.max(0, Math.floor(calendarDays));
+    const fixedPay = monthFixedPay(calDays);
+
     if (days <= 0 || input <= 0) {
         return {
-            fixedPay: 0,
+            fixedPay,
             dailyPrimTotal: 0,
             monthlyBonusAmount: 0,
-            grandTotal: 0,
+            grandTotal: fixedPay,
             totalPackages: 0,
             packagesPerDay: 0,
             dayPrimAmount: 0,
@@ -299,7 +346,6 @@ export function projectScenario(
         packagesPerDay = Math.round(totalPackages / days);
     }
 
-    const fixedPay = days * DAILY_FIXED;
     const dayPrimAmount = dailyPrim(packagesPerDay, tip);
     const dailyPrimTotal = dayPrimAmount * days;
     const monthlyBonusAmount = monthlyBonus(totalPackages);

@@ -25,6 +25,7 @@ const TABLES = [
     'projects',
     'ai_subscriptions',
     'ai_usage_logs',
+    'ai_budget_settings',
     'personal_finance_incomes',
     'personal_finance_expenses',
     'personal_finance_debts'

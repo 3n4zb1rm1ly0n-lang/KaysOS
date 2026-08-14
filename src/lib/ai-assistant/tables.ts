@@ -30,7 +30,8 @@ export const AI_READ_TABLES: TableInfo[] = [
     { name: 'personal_finance_incomes', label: 'Kişisel gelir', hint: 'gelir kalemleri' },
     { name: 'personal_finance_expenses', label: 'Kişisel gider', hint: 'gider kalemleri' },
     { name: 'personal_finance_debts', label: 'Kişisel borç', hint: 'borçlar' },
-    { name: 'ai_usage_logs', label: 'AI kullanım', hint: 'token ve maliyet' }
+    { name: 'ai_usage_logs', label: 'AI kullanım', hint: 'token ve maliyet' },
+    { name: 'ai_budget_settings', label: 'AI bütçe ayarı', hint: 'limit ve dönem' }
 ];
 
 export const AI_READ_TABLE_NAMES = new Set(AI_READ_TABLES.map((t) => t.name));

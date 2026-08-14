@@ -5,6 +5,11 @@ import Link from 'next/link';
 import { Coins, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AI_MONTHLY_BUDGET_USD } from '@/lib/ai-assistant/pricing';
+import {
+    DEFAULT_AI_BUDGET,
+    normalizeBudgetRow,
+    type AiBudgetSettings
+} from '@/lib/ai-assistant/budget';
 
 type UsageRow = {
     id: string;
@@ -44,16 +49,18 @@ export default function AiUsagePage() {
     const [monthCost, setMonthCost] = useState(0);
     const [monthTokens, setMonthTokens] = useState(0);
     const [monthCalls, setMonthCalls] = useState(0);
+    const [periodCost, setPeriodCost] = useState(0);
+    const [budgetSettings, setBudgetSettings] = useState<AiBudgetSettings>(DEFAULT_AI_BUDGET);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const budget = AI_MONTHLY_BUDGET_USD;
+    const budget = budgetSettings.limit_usd || AI_MONTHLY_BUDGET_USD;
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         const monthIso = startOfMonthIso();
 
-        const [listRes, monthRes] = await Promise.all([
+        const [listRes, monthRes, budgetRes] = await Promise.all([
             supabase
                 .from('ai_usage_logs')
                 .select(
@@ -65,10 +72,20 @@ export default function AiUsagePage() {
                 .from('ai_usage_logs')
                 .select('cost_usd, total_tokens')
                 .gte('created_at', monthIso)
-                .limit(5000)
+                .limit(5000),
+            supabase
+                .from('ai_budget_settings')
+                .select('id, limit_usd, period_started_at, updated_at')
+                .eq('id', 'main')
+                .maybeSingle()
         ]);
 
         setLoading(false);
+
+        const settings = normalizeBudgetRow(
+            budgetRes.error ? null : (budgetRes.data as AiBudgetSettings | null)
+        );
+        setBudgetSettings(settings);
 
         if (listRes.error) {
             setError(
@@ -80,6 +97,7 @@ export default function AiUsagePage() {
             setMonthCost(0);
             setMonthTokens(0);
             setMonthCalls(0);
+            setPeriodCost(0);
             return;
         }
 
@@ -92,12 +110,21 @@ export default function AiUsagePage() {
         } else {
             const monthRows = monthRes.data || [];
             setMonthCalls(monthRows.length);
-            setMonthCost(
-                monthRows.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0)
-            );
-            setMonthTokens(
-                monthRows.reduce((s, r) => s + (Number(r.total_tokens) || 0), 0)
-            );
+            setMonthCost(monthRows.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0));
+            setMonthTokens(monthRows.reduce((s, r) => s + (Number(r.total_tokens) || 0), 0));
+        }
+
+        const periodStart = settings.period_started_at;
+        const { data: periodRows, error: periodErr } = await supabase
+            .from('ai_usage_logs')
+            .select('cost_usd')
+            .gte('created_at', periodStart)
+            .limit(5000);
+
+        if (periodErr || !periodRows) {
+            setPeriodCost(0);
+        } else {
+            setPeriodCost(periodRows.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0));
         }
     }, []);
 
@@ -121,10 +148,15 @@ export default function AiUsagePage() {
             );
     }, [rows, todayIso]);
 
-    const budgetPct = budget > 0 ? Math.min(100, (monthCost / budget) * 100) : 0;
-    const remaining = Math.max(0, budget - monthCost);
+    const budgetPct = budget > 0 ? Math.min(100, (periodCost / budget) * 100) : 0;
+    const remaining = Math.max(0, budget - periodCost);
     const barTone =
         budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 70 ? 'bg-amber-500' : 'bg-primary';
+    const periodLabel =
+        budgetSettings.period_started_at &&
+        new Date(budgetSettings.period_started_at).getTime() > 0
+            ? new Date(budgetSettings.period_started_at).toLocaleString('tr-TR')
+            : 'tüm kayıtlar';
 
     return (
         <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -139,12 +171,20 @@ export default function AiUsagePage() {
                         Her asistan isteğinin token ve tahmini USD maliyeti.
                     </p>
                 </div>
-                <Link
-                    href="/app/dashboard/assistant"
-                    className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary/50"
-                >
-                    Asistana dön
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                    <Link
+                        href="/app/dashboard/settings"
+                        className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary/50"
+                    >
+                        Bütçe ayarı
+                    </Link>
+                    <Link
+                        href="/app/dashboard/assistant"
+                        className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary/50"
+                    >
+                        Asistana dön
+                    </Link>
+                </div>
             </header>
 
             {error && (
@@ -156,9 +196,9 @@ export default function AiUsagePage() {
             <section className="rounded-xl border border-border p-4 md:p-5 space-y-3">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                     <div>
-                        <div className="text-xs text-muted-foreground">Aylık bütçe</div>
+                        <div className="text-xs text-muted-foreground">Dönem bütçesi</div>
                         <div className="text-lg font-semibold tabular-nums mt-0.5">
-                            {fmtUsd(monthCost, 4)}
+                            {fmtUsd(periodCost, 4)}
                             <span className="text-muted-foreground font-normal text-sm">
                                 {' '}
                                 / {fmtUsd(budget, 2)}
@@ -166,9 +206,7 @@ export default function AiUsagePage() {
                         </div>
                     </div>
                     <div className="text-right text-xs text-muted-foreground tabular-nums">
-                        <div>
-                            %{budgetPct.toFixed(1)} kullanıldı
-                        </div>
+                        <div>%{budgetPct.toFixed(1)} kullanıldı</div>
                         <div>Kalan {fmtUsd(remaining, 4)}</div>
                     </div>
                 </div>
@@ -178,7 +216,7 @@ export default function AiUsagePage() {
                     aria-valuenow={Math.round(budgetPct)}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    aria-label="Aylık AI bütçe kullanımı"
+                    aria-label="AI bütçe kullanımı"
                 >
                     <div
                         className={`h-full rounded-full transition-[width] duration-500 ease-out ${barTone}`}
@@ -186,9 +224,11 @@ export default function AiUsagePage() {
                     />
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                    Bu ayın asistan loglarından hesaplanır (tahmini USD). OpenAI hesabındaki $
-                    {budget.toFixed(0)} limit ile hizalı; limit değişince kodda{' '}
-                    <code className="text-[10px]">AI_MONTHLY_BUDGET_USD</code> güncelle.
+                    Dönem: {periodLabel}. Limit ve sıfırlama{' '}
+                    <Link href="/app/dashboard/settings" className="text-primary hover:underline">
+                        Ayarlar
+                    </Link>
+                    ’dan.
                 </p>
             </section>
 

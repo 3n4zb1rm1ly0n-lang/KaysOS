@@ -25,7 +25,9 @@ import {
     UserRound,
     WalletCards,
     CreditCard,
-    Scale
+    Scale,
+    Coins,
+    Bot
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -253,6 +255,16 @@ export function Sidebar() {
                 <Link href="/app/dashboard/calendar" className={linkClass('/app/dashboard/calendar')}>
                     <Calendar className="w-5 h-5 shrink-0" />
                     <span>Takvim</span>
+                </Link>
+
+                <Link href="/app/dashboard/assistant" className={linkClass('/app/dashboard/assistant')}>
+                    <Bot className="w-5 h-5 shrink-0" />
+                    <span>Asistan</span>
+                </Link>
+
+                <Link href="/app/dashboard/ai-usage" className={linkClass('/app/dashboard/ai-usage')}>
+                    <Coins className="w-5 h-5 shrink-0" />
+                    <span>AI kullanım</span>
                 </Link>
             </nav>
 

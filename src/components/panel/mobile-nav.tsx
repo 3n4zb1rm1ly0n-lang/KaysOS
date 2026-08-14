@@ -17,7 +17,9 @@ import {
     ChevronDown,
     ChevronRight,
     Mail,
-    UserRound
+    UserRound,
+    Bot,
+    Coins
 } from 'lucide-react';
 import { COMPANY_FINANCE_NAV_ITEMS, PERSONAL_FINANCE_NAV_ITEMS } from './sidebar';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -206,6 +208,24 @@ export function MobileNav() {
                             >
                                 <Calendar className="w-5 h-5 shrink-0" />
                                 <span>Takvim</span>
+                            </Link>
+
+                            <Link
+                                href="/app/dashboard/assistant"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/assistant')}
+                            >
+                                <Bot className="w-5 h-5 shrink-0" />
+                                <span>Asistan</span>
+                            </Link>
+
+                            <Link
+                                href="/app/dashboard/ai-usage"
+                                onClick={close}
+                                className={itemClass('/app/dashboard/ai-usage')}
+                            >
+                                <Coins className="w-5 h-5 shrink-0" />
+                                <span>AI kullanım</span>
                             </Link>
                         </nav>
 

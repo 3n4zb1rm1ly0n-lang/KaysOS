@@ -23,7 +23,11 @@ const TABLES = [
     'ecosystem_items',
     'domains',
     'projects',
-    'ai_subscriptions'
+    'ai_subscriptions',
+    'ai_usage_logs',
+    'personal_finance_incomes',
+    'personal_finance_expenses',
+    'personal_finance_debts'
 ] as const;
 
 export async function POST(request: Request) {

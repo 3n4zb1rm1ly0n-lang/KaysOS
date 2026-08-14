@@ -1,138 +1,156 @@
-"use client";
+'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils'; // Assuming this exists, if not I'll standard clsx
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { Bot, Loader2, Send, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-interface Message {
-    role: 'user' | 'assistant' | 'system';
+type Role = 'user' | 'assistant';
+
+type ChatMessage = {
+    role: Role;
     content: string;
+    usage?: {
+        model: string;
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+        cost_usd: number;
+        tool_rounds: number;
+    };
+};
+
+function fmtUsd(n: number): string {
+    return `$${n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`;
 }
 
-interface ActiveChatInterfaceProps {
+const SUGGESTIONS = [
+    'Bu ay paket prim özetini yorumla.',
+    'Aylık kazançta son 3 ayı karşılaştır.',
+    'Yaklaşan domain yenilemelerini listele.',
+    'Aktif ve bekleyen projeleri özetle.'
+];
+
+export function ActiveChatInterface({
+    className,
+    onClose
+}: {
     className?: string;
     onClose?: () => void;
-}
-
-export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceProps) {
-    const [messages, setMessages] = useState<Message[]>([]);
+}) {
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
+    const [ready, setReady] = useState<boolean | null>(null);
+    const [model, setModel] = useState('gpt-4o-mini');
+    const endRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        void fetch('/api/assistant')
+            .then((r) => r.json())
+            .then((d) => {
+                setReady(Boolean(d.ok));
+                if (typeof d.model === 'string') setModel(d.model);
+            })
+            .catch(() => setReady(false));
+    }, []);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!input.trim() || loading) return;
+    useEffect(() => {
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, loading]);
 
-        const userMessage: Message = { role: 'user', content: input };
-        setMessages(prev => [...prev, userMessage]);
+    const send = async (text: string) => {
+        const trimmed = text.trim();
+        if (!trimmed || loading) return;
+
+        const userMessage: ChatMessage = { role: 'user', content: trimmed };
+        const next = [...messages, userMessage];
+        setMessages(next);
         setInput('');
         setLoading(true);
 
         try {
             const response = await fetch('/api/assistant', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content }))
-                }),
+                    messages: next.map((m) => ({ role: m.role, content: m.content }))
+                })
             });
-
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            const data = await response.json();
-
-            // Parse content for Agent Prefix e.g. [MUDUR] ...
-            let content = data.content || "Üzgünüm, bu isteği işleyemedim.";
-
-            // Clean up the content but keep the prefix for internal logic if needed, 
-            // or we'll just store the raw content and parse it during render.
-            // Actually, let's keep it raw so we can style it in the render loop.
-
-            const botMessage: Message = {
-                role: 'assistant',
-                content: content
+            const data = (await response.json()) as {
+                content?: string;
+                error?: string;
+                usage?: ChatMessage['usage'];
             };
-
-            setMessages(prev => [...prev, botMessage]);
-        } catch (error) {
-            console.error('Error:', error);
-            setMessages(prev => [...prev, { role: 'assistant', content: "[SISTEM] Üzgünüm, bir hata oluştu. Bağlantınızı kontrol edin." }]);
+            if (!response.ok) {
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        content: data.error || 'İstek başarısız.'
+                    }
+                ]);
+                return;
+            }
+            setMessages((prev) => [
+                ...prev,
+                {
+                    role: 'assistant',
+                    content: data.content || 'Yanıt boş.',
+                    usage: data.usage
+                }
+            ]);
+        } catch {
+            setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: 'Bağlantı hatası. Dev sunucusunun çalıştığından emin ol.' }
+            ]);
         } finally {
             setLoading(false);
         }
     };
 
-    // Helper: Parse Agent from content
-    const getAgentStyle = (content: string) => {
-        if (content.startsWith('[ASISTAN]')) return { name: 'Asistan', color: 'bg-zinc-950 border-amber-500/50 text-amber-500', icon: '🤖' };
-        if (content.startsWith('[OPERASYON]')) return { name: 'Operasyon', color: 'bg-orange-900/50 border-orange-500/50 text-orange-400', icon: '⚡' };
-        if (content.startsWith('[ANALIST]')) return { name: 'Analist', color: 'bg-purple-900/50 border-purple-500/50 text-purple-400', icon: 'chart' };
-        if (content.startsWith('[SISTEM]')) return { name: 'Sistem', color: 'bg-red-900/50 border-red-500/50 text-red-400', icon: '⚠️' };
-        return { name: 'Asistan', color: 'bg-gray-800', icon: '🤖' };
-    };
-
-    const cleanContent = (content: string) => {
-        return content.replace(/^\[.*?\]\s*/, '');
-    };
-
-    const suggestions = [
-        "Aktif projeleri özetle.",
-        "Yaklaşan domain yenilemelerini listele.",
-        "Devam eden projeler neler?",
-        "Pipeline’daki fikirleri göster."
-    ];
-
     return (
-        <div className={cn("flex flex-col h-full bg-black/40 text-gray-100 backdrop-blur-sm", className)}>
-            {/* Header indicating the team */}
-            <div className="p-3 border-b border-white/5 flex items-center justify-between bg-black/20">
-                <div className="flex items-center gap-2 text-xs font-mono text-zinc-500">
-                    <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Asistan</span>
-                    <span className="flex items-center gap-1 text-orange-500"><span className="w-1.5 h-1.5 rounded-full bg-orange-500" />Operasyon</span>
-                    <span className="flex items-center gap-1 text-purple-500"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Analiz</span>
-                </div>
-                {onClose && (
-                    <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1">
-                        <span className="sr-only">Kapat</span>
-                        <div className="hover:bg-white/10 rounded-md p-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                        </div>
+        <div className={cn('flex flex-col h-full min-h-0', className)}>
+            {onClose && (
+                <div className="flex justify-end px-3 pt-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary/50"
+                        aria-label="Kapat"
+                    >
+                        <X className="w-4 h-4" />
                     </button>
+                </div>
+            )}
+            <div className="flex-1 overflow-y-auto space-y-4 p-4 md:p-5">
+                {ready === false && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                        OpenAI anahtarı görünmüyor. `.env` içinde `OPENAI_API_KEY` koyup `npm run
+                        dev`’i yeniden başlat.
+                    </div>
                 )}
-            </div>
 
-            <div className="flex-1 overflow-y-auto space-y-6 p-6 scrollbar-thin scrollbar-thumb-gray-800">
                 {messages.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-6 animate-in fade-in duration-500">
-                        <div className="relative">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full blur opacity-25"></div>
-                            <Bot size={64} className="relative text-white opacity-80" />
+                    <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-secondary/30">
+                            <Bot className="w-7 h-7 text-primary" />
                         </div>
-                        <div className="text-center space-y-2">
-                            <h3 className="text-xl font-semibold text-white">Yönetim Kurulu Hazır</h3>
-                            <p className="text-sm text-gray-400 max-w-xs mx-auto">
-                                Asistan şu an kapalı; operasyon ve proje soruları için yakında.
+                        <div className="space-y-1">
+                            <h3 className="text-lg font-semibold">KaysOS asistan</h3>
+                            <p className="text-sm text-muted-foreground max-w-md">
+                                ChatGPT ({model}) Supabase verilerini okuyup yorumlar. Yazma yok.
+                                Her yanıtın token maliyeti kaydedilir.
                             </p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 w-full max-w-lg">
-                            {suggestions.map((s, i) => (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                            {SUGGESTIONS.map((s) => (
                                 <button
-                                    key={i}
-                                    onClick={() => setInput(s)}
-                                    className="p-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition text-left text-xs text-gray-300"
+                                    key={s}
+                                    type="button"
+                                    onClick={() => void send(s)}
+                                    className="p-3 text-left text-xs rounded-xl border border-border hover:bg-secondary/50 text-muted-foreground"
                                 >
                                     {s}
                                 </button>
@@ -141,67 +159,71 @@ export function ActiveChatInterface({ className, onClose }: ActiveChatInterfaceP
                     </div>
                 )}
 
-                {messages.map((msg, idx) => {
-                    const agentStyle = msg.role === 'assistant' ? getAgentStyle(msg.content) : null;
-                    const finalContent = msg.role === 'assistant' ? cleanContent(msg.content) : msg.content;
-
-                    return (
+                {messages.map((msg, idx) => (
+                    <div
+                        key={idx}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
                         <div
-                            key={idx}
-                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            className={`max-w-[90%] md:max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
+                                msg.role === 'user'
+                                    ? 'bg-primary text-primary-foreground rounded-tr-sm'
+                                    : 'bg-secondary/40 border border-border rounded-tl-sm'
+                            }`}
                         >
-                            <div
-                                className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                            >
-                                {msg.role === 'assistant' && (
-                                    <span className="text-[10px] uppercase tracking-wider font-bold mb-1 ml-1 opacity-50 flex items-center gap-1">
-                                        {agentStyle?.icon === 'calculator' ? <span className="text-lg">🧮</span> :
-                                            agentStyle?.icon === 'chart' ? <span className="text-lg">📊</span> :
-                                                <span className="text-lg">{agentStyle?.icon}</span>}
-                                        {agentStyle?.name}
-                                    </span>
-                                )}
-
-                                <div
-                                    className={`p-4 rounded-2xl whitespace-pre-wrap text-sm shadow-sm ${msg.role === 'user'
-                                        ? 'bg-blue-600 text-white rounded-tr-none'
-                                        : `${agentStyle?.color || 'bg-zinc-800'} text-gray-100 rounded-tl-none border border-white/5`
-                                        }`}
-                                >
-                                    {finalContent}
+                            {msg.content}
+                            {msg.usage && (
+                                <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-muted-foreground tabular-nums">
+                                    {msg.usage.total_tokens} token · {fmtUsd(msg.usage.cost_usd)} ·{' '}
+                                    {msg.usage.model}
+                                    {msg.usage.tool_rounds > 0
+                                        ? ` · ${msg.usage.tool_rounds} veri turu`
+                                        : ''}
                                 </div>
-                            </div>
-                        </div>
-                    );
-                })}
-
-                {loading && (
-                    <div className="flex justify-start">
-                        <div className="flex items-center space-x-3 bg-zinc-900/50 p-4 rounded-2xl rounded-tl-none border border-white/5">
-                            <Loader2 size={16} className="animate-spin text-amber-500" />
-                            <span className="text-xs text-amber-500 font-medium">Müdür ekipleri koordine ediyor...</span>
+                            )}
                         </div>
                     </div>
+                ))}
+
+                {loading && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Veriler okunuyor…
+                    </div>
                 )}
-                <div ref={messagesEndRef} />
+                <div ref={endRef} />
             </div>
 
-            <form onSubmit={handleSubmit} className="flex gap-3 p-4 bg-black/40 border-t border-white/5 backdrop-blur-xl">
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    void send(input);
+                }}
+                className="flex gap-2 p-4 border-t border-border bg-background"
+            >
                 <input
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Talimat verin..."
-                    className="flex-1 bg-white/5 text-white px-5 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 placeholder-gray-500 border border-white/5 transition-all"
+                    placeholder="Sor: bu ay net kazanç, prim, domain…"
+                    disabled={loading}
+                    className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                 />
                 <button
                     type="submit"
                     disabled={loading || !input.trim()}
-                    className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl transition-all shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-95"
+                    className="inline-flex items-center justify-center rounded-xl bg-primary text-primary-foreground px-3 py-2.5 disabled:opacity-50"
                 >
-                    <Send size={20} />
+                    <Send className="w-4 h-4" />
                 </button>
             </form>
+
+            <p className="px-4 pb-3 text-[11px] text-muted-foreground">
+                Maliyet dökümü:{' '}
+                <Link href="/app/dashboard/ai-usage" className="text-primary hover:underline">
+                    AI kullanım
+                </Link>
+            </p>
         </div>
     );
 }

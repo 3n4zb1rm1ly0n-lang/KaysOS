@@ -116,6 +116,8 @@ export type PersonalIncomeRow = {
     month: number;
     name: string;
     amount: number;
+    /** Haciz / banka blokesi — gelirden düşülür */
+    blocked_amount: number;
     source: string;
     company_monthly_entry_id: string | null;
     due_date: string | null;
@@ -124,6 +126,18 @@ export type PersonalIncomeRow = {
     note: string;
     sort_order: number;
 };
+
+/** Bloke tutarı tutarı aşamaz */
+export function incomeBlocked(amount: number, blocked: number): number {
+    const a = parseMoney(amount);
+    const b = Math.max(0, parseMoney(blocked));
+    return Math.min(b, a);
+}
+
+/** Kullanılabilir gelir = tutar − haciz bloke */
+export function incomeUsable(amount: number, blocked: number): number {
+    return Math.max(0, parseMoney(amount) - incomeBlocked(amount, blocked));
+}
 
 export type PersonalExpenseRow = {
     id: string;
@@ -148,12 +162,14 @@ export function expenseIsFullyPaid(amount: number, paidAmount: number): boolean 
 }
 
 export function mapIncome(r: Record<string, unknown>): PersonalIncomeRow {
+    const amount = parseMoney(r.amount as string | number);
     return {
         id: String(r.id),
         year: Number(r.year),
         month: Number(r.month),
         name: String(r.name ?? ''),
-        amount: parseMoney(r.amount as string | number),
+        amount,
+        blocked_amount: incomeBlocked(amount, parseMoney(r.blocked_amount as string | number)),
         source: String(r.source ?? ''),
         company_monthly_entry_id: r.company_monthly_entry_id
             ? String(r.company_monthly_entry_id)

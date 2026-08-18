@@ -13,6 +13,8 @@ create table if not exists personal_finance_incomes (
   month integer not null check (month >= 1 and month <= 12),
   name text not null,
   amount numeric not null default 0,
+  -- Haciz / banka blokesi — kullanılabilir = amount − blocked_amount
+  blocked_amount numeric not null default 0,
   -- '' = manuel · company_cash = şirket aylık net (nakit)
   source text not null default '',
   company_monthly_entry_id uuid references company_finance_monthly_entries(id) on delete set null,

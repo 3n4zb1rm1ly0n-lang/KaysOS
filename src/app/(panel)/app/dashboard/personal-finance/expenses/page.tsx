@@ -11,6 +11,8 @@ import {
     expenseIsFullyPaid,
     expenseRemaining,
     fmtMoney,
+    incomeBlocked,
+    incomeUsable,
     mapExpense,
     parseMoney,
     type PersonalExpenseRow
@@ -22,6 +24,7 @@ export default function PersonalExpensesPage() {
     const [month, setMonth] = useState(now.getMonth() + 1);
     const [expenses, setExpenses] = useState<PersonalExpenseRow[]>([]);
     const [incomeTotal, setIncomeTotal] = useState(0);
+    const [blockedTotal, setBlockedTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -50,7 +53,7 @@ export default function PersonalExpensesPage() {
                 .order('created_at'),
             supabase
                 .from(PF_INCOMES)
-                .select('amount')
+                .select('amount, blocked_amount')
                 .eq('year', y)
                 .eq('month', m)
         ]);
@@ -66,17 +69,31 @@ export default function PersonalExpensesPage() {
             );
             setExpenses([]);
             setIncomeTotal(0);
+            setBlockedTotal(0);
             setLoading(false);
             return;
         }
 
         setExpenses((expRes.data ?? []).map((r) => mapExpense(r as Record<string, unknown>)));
         if (!incRes.error) {
-            setIncomeTotal(
-                (incRes.data ?? []).reduce((a, r) => a + parseMoney(r.amount), 0)
+            let gross = 0;
+            let blocked = 0;
+            for (const r of incRes.data ?? []) {
+                const amt = parseMoney(r.amount);
+                gross += amt;
+                blocked += incomeBlocked(amt, parseMoney(r.blocked_amount));
+            }
+            setIncomeTotal(gross);
+            setBlockedTotal(blocked);
+        } else if (incRes.error.message.includes('blocked_amount')) {
+            setError(
+                'Haciz bloke alanı eksik. Supabase’te add_personal_income_blocked_amount.sql çalıştırın.'
             );
+            setIncomeTotal(0);
+            setBlockedTotal(0);
         } else {
             setIncomeTotal(0);
+            setBlockedTotal(0);
         }
         setLoading(false);
     }, []);
@@ -97,7 +114,7 @@ export default function PersonalExpensesPage() {
             ),
         [expenses]
     );
-    const remaining = incomeTotal - expenseTotal;
+    const remaining = incomeUsable(incomeTotal, blockedTotal) - expenseTotal;
 
     const addExpense = async () => {
         const name = draftName.trim() || 'Gider';
@@ -311,13 +328,21 @@ export default function PersonalExpensesPage() {
                 </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                         Gelir
                     </p>
                     <p className="text-lg font-semibold tabular-nums text-primary">
                         {fmtMoney(incomeTotal)}
+                    </p>
+                </div>
+                <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Haciz bloke
+                    </p>
+                    <p className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                        {fmtMoney(blockedTotal)}
                     </p>
                 </div>
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
@@ -338,7 +363,7 @@ export default function PersonalExpensesPage() {
                 </div>
                 <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Kalan (bütçe)
+                        Kalan (kullanılabilir)
                     </p>
                     <p
                         className={`text-lg font-semibold tabular-nums ${
@@ -346,6 +371,9 @@ export default function PersonalExpensesPage() {
                         }`}
                     >
                         {fmtMoney(remaining)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">
+                        Kullanılabilir gelir {fmtMoney(incomeUsable(incomeTotal, blockedTotal))}
                     </p>
                 </div>
             </div>

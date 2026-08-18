@@ -18,7 +18,8 @@ import {
     mergeYearlyPrims,
     monthInterestAmount,
     monthLabel,
-    summarizeBagkur
+    summarizeBagkur,
+    thisMonthDue
 } from '@/lib/bagkur';
 
 const SETTINGS_TABLE = 'company_finance_bagkur_settings';
@@ -36,6 +37,10 @@ export default function BagkurPage() {
 
     const summary = useMemo(
         () => summarizeBagkur(rows, settings.penalty_ratio),
+        [rows, settings.penalty_ratio]
+    );
+    const monthDue = useMemo(
+        () => thisMonthDue(rows, settings.penalty_ratio),
         [rows, settings.penalty_ratio]
     );
 
@@ -216,6 +221,64 @@ export default function BagkurPage() {
         );
         setSaving(false);
     }, [ratioInput, settings, rows]);
+
+    const persistYearlyPrim = useCallback(
+        async (year: number, raw: string) => {
+            if (!settings.id) return;
+            const n = parseFloat(raw.replace(',', '.'));
+            if (!Number.isFinite(n) || n < 0) return;
+            const current = defaultPrimFor(year, 1, settings.yearly_prims);
+            if (Math.abs(n - current) < 0.001) return;
+            const yearly_prims = mergeYearlyPrims({
+                ...settings.yearly_prims,
+                [String(year)]: n
+            });
+            setSaving(true);
+            setError(null);
+            const { error: upErr } = await supabase
+                .from(SETTINGS_TABLE)
+                .update({ yearly_prims })
+                .eq('id', settings.id);
+            if (upErr) {
+                setError(
+                    upErr.message.includes('yearly_prims')
+                        ? 'yearly_prims kolonu yok. Supabase’te add_bagkur_yearly_prims.sql çalıştırın.'
+                        : upErr.message
+                );
+                setSaving(false);
+                return;
+            }
+            const unpaid = rows.filter((r) => !r.is_paid && r.year === year);
+            for (const r of unpaid) {
+                const target = defaultPrimFor(r.year, r.month, yearly_prims);
+                if (Math.abs(target - Number(r.prim_amount)) <= 0.001) continue;
+                const { error: mErr } = await supabase
+                    .from(MONTHS_TABLE)
+                    .update({ prim_amount: target })
+                    .eq('year', r.year)
+                    .eq('month', r.month)
+                    .eq('is_paid', false);
+                if (mErr) {
+                    setError(mErr.message);
+                    setSaving(false);
+                    return;
+                }
+            }
+            setSettings((s) => ({ ...s, yearly_prims }));
+            setRows((prev) =>
+                prev.map((r) =>
+                    r.is_paid || r.year !== year
+                        ? r
+                        : { ...r, prim_amount: defaultPrimFor(r.year, r.month, yearly_prims) }
+                )
+            );
+            setStatus(
+                `${year} aylık prim ${fmtMoney(n)}. Ödenmemiş aylar güncellendi.`
+            );
+            setSaving(false);
+        },
+        [settings.id, settings.yearly_prims, rows]
+    );
 
     const calibrate = useCallback(() => {
         const ratio = calibrateRatio(summary.unpaidPrincipal, settings.sgk_penalty_ref);
@@ -437,7 +500,7 @@ export default function BagkurPage() {
                 </section>
             )}
 
-            <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <Kpi label="Ana borç" value={fmtMoney(summary.unpaidPrincipal)} hint={`${summary.unpaidMonths} ay ödenmedi`} />
                 <Kpi
                     label="Faiz / ceza"
@@ -451,6 +514,21 @@ export default function BagkurPage() {
                     emphasize
                 />
                 <Kpi
+                    label="Bu ay ödenecek"
+                    value={
+                        monthDue.paid
+                            ? fmtMoney(0)
+                            : fmtMoney(monthDue.total)
+                    }
+                    hint={
+                        monthDue.paid
+                            ? `${monthLabel(monthDue.month)} ödendi`
+                            : monthDue.found
+                              ? `${monthLabel(monthDue.month)} · prim ${fmtMoney(monthDue.prim)} + faiz`
+                              : 'Bu ay satırı yok'
+                    }
+                />
+                <Kpi
                     label="e-Devlet ref."
                     value={fmtMoney(settings.sgk_total_ref)}
                     hint={`Ana ${fmtMoney(settings.sgk_principal_ref)}`}
@@ -461,12 +539,17 @@ export default function BagkurPage() {
             <section className="rounded-xl border border-border overflow-hidden">
                 <div className="px-4 py-3 border-b border-border bg-secondary/20">
                     <h2 className="text-sm font-semibold">Yıllık özet</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                        Girişte aylık prim toplamını belirle. Yıllık plan = aylık × tahakkuk eden ay.
+                    </p>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead className="text-xs text-muted-foreground">
                             <tr className="border-b border-border">
                                 <th className="text-left font-medium px-4 py-2">Yıl</th>
+                                <th className="text-right font-medium px-4 py-2">Aylık prim</th>
+                                <th className="text-right font-medium px-4 py-2">Yıllık plan</th>
                                 <th className="text-right font-medium px-4 py-2">Ödenmemiş ana</th>
                                 <th className="text-right font-medium px-4 py-2">Faiz</th>
                                 <th className="text-right font-medium px-4 py-2">Toplam</th>
@@ -474,23 +557,54 @@ export default function BagkurPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                            {summary.byYear.map((y) => (
-                                <tr key={y.year}>
-                                    <td className="px-4 py-2 font-medium">{y.year}</td>
-                                    <td className="px-4 py-2 text-right tabular-nums">
-                                        {fmtMoney(y.unpaidPrincipal)}
-                                    </td>
-                                    <td className="px-4 py-2 text-right tabular-nums">
-                                        {fmtMoney(y.interest)}
-                                    </td>
-                                    <td className="px-4 py-2 text-right tabular-nums font-medium">
-                                        {fmtMoney(y.total)}
-                                    </td>
-                                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                                        {y.paidMonths}/{y.months}
-                                    </td>
-                                </tr>
-                            ))}
+                            {summary.byYear.map((y) => {
+                                const monthly = defaultPrimFor(
+                                    y.year,
+                                    1,
+                                    settings.yearly_prims
+                                );
+                                const yearPlan = monthly * y.months;
+                                return (
+                                    <tr key={y.year}>
+                                        <td className="px-4 py-2 font-medium">{y.year}</td>
+                                        <td className="px-4 py-2 text-right">
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                min={0}
+                                                defaultValue={monthly}
+                                                key={`yp-${y.year}-${monthly}`}
+                                                disabled={saving || !settings.id}
+                                                onBlur={(e) =>
+                                                    void persistYearlyPrim(
+                                                        y.year,
+                                                        e.target.value
+                                                    )
+                                                }
+                                                className="w-32 ml-auto block rounded-lg border border-border bg-background px-2 py-1.5 text-right tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                            {fmtMoney(yearPlan)}
+                                            <span className="block text-[11px]">
+                                                {y.months} ay
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-right tabular-nums">
+                                            {fmtMoney(y.unpaidPrincipal)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right tabular-nums">
+                                            {fmtMoney(y.interest)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right tabular-nums font-medium">
+                                            {fmtMoney(y.total)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                            {y.paidMonths}/{y.months}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

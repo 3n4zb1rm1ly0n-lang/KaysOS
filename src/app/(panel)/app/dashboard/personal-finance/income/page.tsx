@@ -11,6 +11,8 @@ import {
     PF_INCOMES,
     fetchCompanyCashNet,
     fmtMoney,
+    incomeBlocked,
+    incomeUsable,
     mapExpense,
     mapIncome,
     monthLabel,
@@ -32,6 +34,7 @@ export default function PersonalIncomePage() {
 
     const [draftName, setDraftName] = useState('');
     const [draftAmount, setDraftAmount] = useState('');
+    const [draftBlocked, setDraftBlocked] = useState('');
     const [draftDue, setDraftDue] = useState('');
     const [draftReceived, setDraftReceived] = useState(true);
     const [draftRepeat, setDraftRepeat] = useState(false);
@@ -59,11 +62,13 @@ export default function PersonalIncomePage() {
         ]);
 
         if (incRes.error) {
+            const msg = incRes.error.message;
             setError(
-                incRes.error.message.includes('does not exist') ||
-                    incRes.error.code === '42P01'
+                msg.includes('does not exist') || incRes.error.code === '42P01'
                     ? 'Tablo bulunamadı. Supabase’te create_personal_finance.sql çalıştırın.'
-                    : incRes.error.message
+                    : msg.includes('blocked_amount')
+                      ? 'Haciz bloke alanı eksik. Supabase’te add_personal_income_blocked_amount.sql çalıştırın.'
+                      : msg
             );
             setIncomes([]);
             setExpenseTotal(0);
@@ -90,7 +95,15 @@ export default function PersonalIncomePage() {
         () => incomes.reduce((a, r) => a + r.amount, 0),
         [incomes]
     );
-    const remaining = incomeTotal - expenseTotal;
+    const blockedTotal = useMemo(
+        () => incomes.reduce((a, r) => a + incomeBlocked(r.amount, r.blocked_amount), 0),
+        [incomes]
+    );
+    const usableTotal = useMemo(
+        () => incomes.reduce((a, r) => a + incomeUsable(r.amount, r.blocked_amount), 0),
+        [incomes]
+    );
+    const remaining = usableTotal - expenseTotal;
     const companyLinked = incomes.some((r) => r.source === COMPANY_SOURCE);
 
     const bindCompanyMonth = async () => {
@@ -121,6 +134,7 @@ export default function PersonalIncomePage() {
                 month,
                 name: `Şirket nakit · ${monthLabel(month)} ${year}`,
                 amount: cash.amount,
+                blocked_amount: 0,
                 source: COMPANY_SOURCE,
                 company_monthly_entry_id: cash.entryId,
                 due_date: null,
@@ -176,6 +190,7 @@ export default function PersonalIncomePage() {
             setError('Tutar gir.');
             return;
         }
+        const blocked = incomeBlocked(amount, parseMoney(draftBlocked));
         setBusy(true);
         setError(null);
         const { error: insErr } = await supabase.from(PF_INCOMES).insert([
@@ -184,6 +199,7 @@ export default function PersonalIncomePage() {
                 month,
                 name,
                 amount,
+                blocked_amount: blocked,
                 source: '',
                 due_date: draftDue || null,
                 is_received: draftReceived,
@@ -193,12 +209,17 @@ export default function PersonalIncomePage() {
             }
         ]);
         if (insErr) {
-            setError(insErr.message);
+            setError(
+                insErr.message.includes('blocked_amount')
+                    ? 'Haciz bloke alanı eksik. Supabase’te add_personal_income_blocked_amount.sql çalıştırın.'
+                    : insErr.message
+            );
             setBusy(false);
             return;
         }
         setDraftName('');
         setDraftAmount('');
+        setDraftBlocked('');
         setDraftDue('');
         setDraftReceived(true);
         setDraftRepeat(false);
@@ -212,6 +233,7 @@ export default function PersonalIncomePage() {
         patch: Partial<{
             name: string;
             amount: number;
+            blocked_amount: number;
             due_date: string | null;
             is_received: boolean;
             repeats_monthly: boolean;
@@ -219,20 +241,24 @@ export default function PersonalIncomePage() {
     ) => {
         const { error: uErr } = await supabase.from(PF_INCOMES).update(patch).eq('id', id);
         if (uErr) {
-            setError(uErr.message);
+            setError(
+                uErr.message.includes('blocked_amount')
+                    ? 'Haciz bloke alanı eksik. Supabase’te add_personal_income_blocked_amount.sql çalıştırın.'
+                    : uErr.message
+            );
             return;
         }
         setIncomes((prev) =>
-            prev.map((r) =>
-                r.id === id
-                    ? {
-                          ...r,
-                          ...patch,
-                          due_date:
-                              patch.due_date !== undefined ? patch.due_date : r.due_date
-                      }
-                    : r
-            )
+            prev.map((r) => {
+                if (r.id !== id) return r;
+                const next = {
+                    ...r,
+                    ...patch,
+                    due_date: patch.due_date !== undefined ? patch.due_date : r.due_date
+                };
+                next.blocked_amount = incomeBlocked(next.amount, next.blocked_amount);
+                return next;
+            })
         );
     };
 
@@ -274,6 +300,7 @@ export default function PersonalIncomePage() {
                 month,
                 name: r.name,
                 amount: r.amount,
+                blocked_amount: incomeBlocked(r.amount, r.blocked_amount),
                 source: '',
                 due_date: null,
                 is_received: false,
@@ -337,13 +364,21 @@ export default function PersonalIncomePage() {
                 </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                         Gelir
                     </p>
                     <p className="text-lg font-semibold tabular-nums text-primary">
                         {fmtMoney(incomeTotal)}
+                    </p>
+                </div>
+                <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Haciz bloke
+                    </p>
+                    <p className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                        {fmtMoney(blockedTotal)}
                     </p>
                 </div>
                 <div className="rounded-lg border border-border bg-secondary/10 px-4 py-3">
@@ -356,7 +391,7 @@ export default function PersonalIncomePage() {
                 </div>
                 <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        Kalan
+                        Kalan (kullanılabilir)
                     </p>
                     <p
                         className={`text-lg font-semibold tabular-nums ${
@@ -364,6 +399,9 @@ export default function PersonalIncomePage() {
                         }`}
                     >
                         {fmtMoney(remaining)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">
+                        Kullanılabilir {fmtMoney(usableTotal)}
                     </p>
                 </div>
             </div>
@@ -427,7 +465,7 @@ export default function PersonalIncomePage() {
                                 key={row.id}
                                 className="rounded-lg border border-border bg-background p-3 space-y-2"
                             >
-                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                                     <div>
                                         <label className="text-[10px] text-muted-foreground">
                                             Ad
@@ -483,11 +521,53 @@ export default function PersonalIncomePage() {
                                             onBlur={() => {
                                                 if (!isCompany)
                                                     void updateRow(row.id, {
-                                                        amount: row.amount
+                                                        amount: row.amount,
+                                                        blocked_amount: incomeBlocked(
+                                                            row.amount,
+                                                            row.blocked_amount
+                                                        )
                                                     });
                                             }}
                                             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums disabled:opacity-70"
                                         />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-muted-foreground">
+                                            Haciz / bloke
+                                        </label>
+                                        <input
+                                            value={String(row.blocked_amount)}
+                                            inputMode="decimal"
+                                            onChange={(e) =>
+                                                setIncomes((prev) =>
+                                                    prev.map((r) =>
+                                                        r.id === row.id
+                                                            ? {
+                                                                  ...r,
+                                                                  blocked_amount: parseMoney(
+                                                                      e.target.value
+                                                                  )
+                                                              }
+                                                            : r
+                                                    )
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                void updateRow(row.id, {
+                                                    blocked_amount: incomeBlocked(
+                                                        row.amount,
+                                                        row.blocked_amount
+                                                    )
+                                                })
+                                            }
+                                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm tabular-nums"
+                                        />
+                                        <p className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
+                                            Kullanılabilir{' '}
+                                            {fmtMoney(
+                                                incomeUsable(row.amount, row.blocked_amount)
+                                            )}
+                                        </p>
                                     </div>
                                     <div>
                                         <label className="text-[10px] text-muted-foreground">
@@ -592,7 +672,7 @@ export default function PersonalIncomePage() {
 
             <div className="rounded-lg border border-dashed border-border p-4 space-y-3">
                 <h2 className="text-sm font-semibold">Gelir ekle</h2>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                     <div>
                         <label className="text-[10px] text-muted-foreground">Ad</label>
                         <input
@@ -607,6 +687,18 @@ export default function PersonalIncomePage() {
                         <input
                             value={draftAmount}
                             onChange={(e) => setDraftAmount(e.target.value)}
+                            inputMode="decimal"
+                            placeholder="0"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] text-muted-foreground">
+                            Haciz / bloke
+                        </label>
+                        <input
+                            value={draftBlocked}
+                            onChange={(e) => setDraftBlocked(e.target.value)}
                             inputMode="decimal"
                             placeholder="0"
                             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"

@@ -9,6 +9,7 @@ import {
     Lock,
     Plus,
     Send,
+    Settings2,
     Trash2,
     Unlock
 } from 'lucide-react';
@@ -16,13 +17,17 @@ import { supabase } from '@/lib/supabase';
 import {
     type FuelLog,
     type FuelLogComputed,
+    type FuelSettings,
     FUEL_EXPENSE_KDV_RATE,
     FUEL_EXPENSE_NAME,
     FUEL_EXPENSE_SOURCE,
+    FUEL_SETTINGS_TABLE,
+    defaultFuelSettings,
     enrichFuelLogs,
     fmtMoney,
     fmtNum,
     litersFrom,
+    mapFuelSettings,
     monthBounds,
     summarizeFuelMonth
 } from '@/lib/fuel';
@@ -72,6 +77,9 @@ export default function FuelPage() {
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
+    const [settings, setSettings] = useState<FuelSettings>(defaultFuelSettings());
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [savingSettings, setSavingSettings] = useState(false);
 
     const [fillDate, setFillDate] = useState(todayISO());
     const [amount, setAmount] = useState('');
@@ -97,7 +105,7 @@ export default function FuelPage() {
         const { from, to } = monthBounds(y, m);
         const month = m + 1;
 
-        const [monthRes, prevRes, closeRes] = await Promise.all([
+        const [monthRes, prevRes, closeRes, settingsRes] = await Promise.all([
             supabase
                 .from(TABLE)
                 .select('id, fill_date, amount_tl, price_per_liter, odometer_km, note')
@@ -117,7 +125,8 @@ export default function FuelPage() {
                 .select('is_closed, amount_sent, fill_count, expense_id, sent_at, note')
                 .eq('year', y)
                 .eq('month', month)
-                .maybeSingle()
+                .maybeSingle(),
+            supabase.from(FUEL_SETTINGS_TABLE).select('*').limit(1).maybeSingle()
         ]);
 
         if (monthRes.error) {
@@ -157,6 +166,26 @@ export default function FuelPage() {
             setClosing(null);
         }
 
+        if (settingsRes.error) {
+            if (
+                settingsRes.error.message.includes('does not exist') ||
+                settingsRes.error.code === '42P01'
+            ) {
+                setSettings(defaultFuelSettings());
+            }
+        } else if (settingsRes.data) {
+            const s = mapFuelSettings(settingsRes.data as Record<string, unknown>);
+            setSettings(s);
+            setPrice((prev) => {
+                if (prev.trim()) return prev;
+                return s.default_price_per_liter > 0
+                    ? String(s.default_price_per_liter)
+                    : prev;
+            });
+        } else {
+            setSettings(defaultFuelSettings());
+        }
+
         const monthLogs = (monthRes.data ?? []).map(mapLog);
         const prevLog =
             !prevRes.error && prevRes.data?.[0] ? mapLog(prevRes.data[0]) : null;
@@ -173,6 +202,54 @@ export default function FuelPage() {
     useEffect(() => {
         void load(year, monthIndex);
     }, [year, monthIndex, load]);
+
+    const saveFuelSettings = useCallback(async () => {
+        setSavingSettings(true);
+        setError(null);
+        const payload = {
+            default_price_per_liter: Math.max(0, settings.default_price_per_liter),
+            monthly_budget_tl: Math.max(0, settings.monthly_budget_tl),
+            vehicle_name: settings.vehicle_name.trim()
+        };
+        if (settings.id) {
+            const { error: upErr } = await supabase
+                .from(FUEL_SETTINGS_TABLE)
+                .update(payload)
+                .eq('id', settings.id);
+            if (upErr) {
+                setError(
+                    upErr.message.includes('does not exist')
+                        ? 'Benzin ayar tablosu yok. Supabase’te create_fuel_settings.sql çalıştırın.'
+                        : upErr.message
+                );
+                setSavingSettings(false);
+                return;
+            }
+        } else {
+            const { data, error: insErr } = await supabase
+                .from(FUEL_SETTINGS_TABLE)
+                .insert(payload)
+                .select('*')
+                .single();
+            if (insErr) {
+                setError(
+                    insErr.message.includes('does not exist')
+                        ? 'Benzin ayar tablosu yok. Supabase’te create_fuel_settings.sql çalıştırın.'
+                        : insErr.message
+                );
+                setSavingSettings(false);
+                return;
+            }
+            setSettings(mapFuelSettings(data as Record<string, unknown>));
+        }
+        if (payload.default_price_per_liter > 0) {
+            setPrice((prev) =>
+                prev.trim() ? prev : String(payload.default_price_per_liter)
+            );
+        }
+        setStatus('Benzin ayarları kaydedildi.');
+        setSavingSettings(false);
+    }, [settings]);
 
     const shiftMonth = (delta: number) => {
         setMonthIndex((m) => {
@@ -200,7 +277,11 @@ export default function FuelPage() {
         setStatus(null);
 
         const amount_tl = parseFloat(amount.replace(',', '.'));
-        const price_per_liter = parseFloat(price.replace(',', '.'));
+        const parsedPrice = parseFloat(price.replace(',', '.'));
+        const price_per_liter =
+            Number.isFinite(parsedPrice) && parsedPrice > 0
+                ? parsedPrice
+                : settings.default_price_per_liter;
         const odometer_km = parseFloat(odometer.replace(',', '.'));
 
         if (!fillDate) {
@@ -214,7 +295,7 @@ export default function FuelPage() {
             return;
         }
         if (!Number.isFinite(price_per_liter) || price_per_liter <= 0) {
-            setError('Geçerli litre fiyatı gir.');
+            setError('Geçerli litre fiyatı gir (veya Benzin ayarlarına varsayılan ₺/L yaz).');
             setSaving(false);
             return;
         }
@@ -239,7 +320,11 @@ export default function FuelPage() {
         }
 
         setAmount('');
-        setPrice('');
+        setPrice(
+            settings.default_price_per_liter > 0
+                ? String(settings.default_price_per_liter)
+                : ''
+        );
         setOdometer('');
         setNote('');
         setStatus('Dolum kaydedildi.');
@@ -484,6 +569,9 @@ export default function FuelPage() {
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight">Benzin tüketimi</h1>
                     <p className="mt-1 text-sm text-muted-foreground">
+                        {settings.vehicle_name
+                            ? `${settings.vehicle_name} · `
+                            : ''}
                         Ayı kapatınca toplam tutar aylık kazanca KDV’siz gider olarak yazılır (netten
                         düşer).
                     </p>
@@ -516,6 +604,14 @@ export default function FuelPage() {
                         </button>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setSettingsOpen((o) => !o)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs hover:bg-secondary/50"
+                        >
+                            <Settings2 className="h-3.5 w-3.5" />
+                            {settingsOpen ? 'Ayarları gizle' : 'Benzin ayarları'}
+                        </button>
                         {monthClosed ? (
                             <button
                                 type="button"
@@ -566,14 +662,97 @@ export default function FuelPage() {
                 </p>
             )}
 
+            {settingsOpen && (
+                <section className="space-y-3 rounded-xl border border-border p-4">
+                    <h2 className="text-sm font-semibold">Benzin ayarları</h2>
+                    <p className="text-xs text-muted-foreground">
+                        Varsayılan litre fiyatı yeni doluma yazılır. Aylık hedef dashboard ve KPI’da
+                        görünür.
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <label className="space-y-1 text-sm">
+                            <span className="text-xs text-muted-foreground">Araç adı</span>
+                            <input
+                                value={settings.vehicle_name}
+                                onChange={(e) =>
+                                    setSettings((s) => ({ ...s, vehicle_name: e.target.value }))
+                                }
+                                placeholder="Örn. Ticari"
+                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                        </label>
+                        <label className="space-y-1 text-sm">
+                            <span className="text-xs text-muted-foreground">
+                                Varsayılan ₺/L
+                            </span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                value={settings.default_price_per_liter || ''}
+                                onChange={(e) =>
+                                    setSettings((s) => ({
+                                        ...s,
+                                        default_price_per_liter:
+                                            parseFloat(e.target.value.replace(',', '.')) || 0
+                                    }))
+                                }
+                                placeholder="48.50"
+                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                        </label>
+                        <label className="space-y-1 text-sm">
+                            <span className="text-xs text-muted-foreground">Aylık hedef ₺</span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                value={settings.monthly_budget_tl || ''}
+                                onChange={(e) =>
+                                    setSettings((s) => ({
+                                        ...s,
+                                        monthly_budget_tl:
+                                            parseFloat(e.target.value.replace(',', '.')) || 0
+                                    }))
+                                }
+                                placeholder="8000"
+                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                        </label>
+                    </div>
+                    <button
+                        type="button"
+                        disabled={savingSettings}
+                        onClick={() => void saveFuelSettings()}
+                        className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    >
+                        {savingSettings ? 'Kaydediliyor…' : 'Ayarları kaydet'}
+                    </button>
+                </section>
+            )}
+
             <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <Kpi
                     label="Ay toplamı"
                     value={fmtMoney(summary.totalAmount)}
-                    hint={`${summary.count} dolum`}
+                    hint={
+                        settings.monthly_budget_tl > 0
+                            ? `${summary.count} dolum · hedefin %${Math.round(
+                                  (summary.totalAmount / settings.monthly_budget_tl) * 100
+                              )}`
+                            : `${summary.count} dolum`
+                    }
                     emphasize
                 />
-                <Kpi label="Toplam litre" value={`${fmtNum(summary.totalLiters, 2)} L`} />
+                <Kpi
+                    label="Toplam litre"
+                    value={`${fmtNum(summary.totalLiters, 2)} L`}
+                    hint={
+                        settings.monthly_budget_tl > 0
+                            ? `Hedef ${fmtMoney(settings.monthly_budget_tl)}`
+                            : undefined
+                    }
+                />
                 <Kpi
                     label="Ort. L/100km"
                     value={summary.avgLPer100km != null ? fmtNum(summary.avgLPer100km, 2) : '—'}

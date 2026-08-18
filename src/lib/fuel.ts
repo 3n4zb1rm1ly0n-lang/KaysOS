@@ -131,3 +131,29 @@ export const FUEL_EXPENSE_SOURCE = 'fuel';
 export const FUEL_EXPENSE_NAME = 'Benzin';
 export const FUEL_EXPENSE_KDV_RATE = 0;
 
+export const FUEL_SETTINGS_TABLE = 'company_finance_fuel_settings';
+
+export type FuelSettings = {
+    id?: string;
+    default_price_per_liter: number;
+    monthly_budget_tl: number;
+    vehicle_name: string;
+};
+
+export function defaultFuelSettings(): FuelSettings {
+    return {
+        default_price_per_liter: 0,
+        monthly_budget_tl: 0,
+        vehicle_name: ''
+    };
+}
+
+export function mapFuelSettings(row: Record<string, unknown>): FuelSettings {
+    return {
+        id: row.id ? String(row.id) : undefined,
+        default_price_per_liter: Number(row.default_price_per_liter) || 0,
+        monthly_budget_tl: Number(row.monthly_budget_tl) || 0,
+        vehicle_name: String(row.vehicle_name ?? '')
+    };
+}
+

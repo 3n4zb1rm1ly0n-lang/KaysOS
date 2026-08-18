@@ -302,6 +302,42 @@ export function isFutureMonth(
     return compareYm(row, asOf) > 0;
 }
 
+/** Bu ay ödenecek Bağkur (prim + faiz); ödendiyse 0 */
+export function thisMonthDue(
+    rows: BagkurMonthRow[],
+    penaltyRatio: number,
+    now = new Date()
+): {
+    year: number;
+    month: number;
+    prim: number;
+    interest: number;
+    total: number;
+    paid: boolean;
+    found: boolean;
+} {
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const row = rows.find((r) => r.year === year && r.month === month);
+    if (!row) {
+        return { year, month, prim: 0, interest: 0, total: 0, paid: false, found: false };
+    }
+    const prim = Number(row.prim_amount) || 0;
+    if (row.is_paid) {
+        return { year, month, prim, interest: 0, total: 0, paid: true, found: true };
+    }
+    const interest = monthInterestAmount(row, penaltyRatio, { year, month }) ?? 0;
+    return {
+        year,
+        month,
+        prim,
+        interest,
+        total: round2(prim + interest),
+        paid: false,
+        found: true
+    };
+}
+
 export function round2(n: number): number {
     return Math.round((n + Number.EPSILON) * 100) / 100;
 }

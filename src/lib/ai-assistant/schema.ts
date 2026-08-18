@@ -299,6 +299,21 @@ export const AI_SCHEMA: TableSchema[] = [
         ]
     },
     {
+        name: 'company_finance_fuel_settings',
+        label: 'Benzin ayar',
+        page: '/app/dashboard/company-finance/fuel',
+        hint: 'Varsayılan ₺/L, aylık hedef',
+        aliases: ['benzin ayar'],
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'updated_at' },
+            { name: 'default_price_per_liter' },
+            { name: 'monthly_budget_tl' },
+            { name: 'vehicle_name' }
+        ]
+    },
+    {
         name: 'company_finance_tax_lump_debts',
         label: 'Vergi toptan borç',
         page: '/app/dashboard/company-finance/vergi-taksit',

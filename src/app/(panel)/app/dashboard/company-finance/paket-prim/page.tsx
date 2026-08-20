@@ -1,7 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Package, Send, X } from 'lucide-react';
+import {
+    ChevronLeft,
+    ChevronRight,
+    Copy,
+    Download,
+    Loader2,
+    Package,
+    Send,
+    X
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { FinancePie } from '@/components/panel/finance-pie';
 import {
@@ -68,6 +77,86 @@ function fmtMoney2(n: number): string {
 function todayStr(): string {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
+type PackageDayTableRow = {
+    date: string;
+    label: string;
+    status: PackageDayEntry['status'];
+    tip: BonusTip | null;
+    packages: number;
+    cumulative: number;
+};
+
+function statusLabel(status: PackageDayEntry['status']): string {
+    if (status === 'work') return 'İş';
+    if (status === 'leave') return 'İzin';
+    return 'Boş';
+}
+
+function tipLabel(tip: BonusTip | null): string {
+    if (tip === 'hemen') return 'Hemen';
+    if (tip === 'sanal') return 'Sanal';
+    return '—';
+}
+
+function buildPackageDayRows(entries: PackageDayEntry[]): PackageDayTableRow[] {
+    let cumulative = 0;
+    return entries.map((e) => {
+        const pkgs = e.status === 'work' ? e.packages : 0;
+        cumulative += pkgs;
+        return {
+            date: e.date,
+            label: formatDayLabel(e.date),
+            status: e.status,
+            tip: e.status === 'work' ? e.tip : null,
+            packages: pkgs,
+            cumulative
+        };
+    });
+}
+
+function packageRowsToTsv(rows: PackageDayTableRow[], monthLabel: string, year: number): string {
+    const header = ['Tarih', 'Durum', 'Tip', 'Paket', 'Kümülatif'].join('\t');
+    const body = rows
+        .map((r) =>
+            [r.label, statusLabel(r.status), tipLabel(r.tip), String(r.packages), String(r.cumulative)].join(
+                '\t'
+            )
+        )
+        .join('\n');
+    const total = rows.reduce((s, r) => s + r.packages, 0);
+    const workDays = rows.filter((r) => r.status === 'work').length;
+    const avg = workDays > 0 ? (total / workDays).toFixed(1) : '0';
+    return `${monthLabel} ${year} — günlük paket\n${header}\n${body}\nToplam\t\t\t${total}\t\nOrtalama (iş günü)\t\t\t${avg}\t`;
+}
+
+function packageRowsToCsv(rows: PackageDayTableRow[], monthLabel: string, year: number): string {
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const lines = [
+        [esc('Tarih'), esc('Durum'), esc('Tip'), esc('Paket'), esc('Kümülatif')].join(','),
+        ...rows.map((r) =>
+            [
+                esc(r.label),
+                esc(statusLabel(r.status)),
+                esc(tipLabel(r.tip)),
+                String(r.packages),
+                String(r.cumulative)
+            ].join(',')
+        )
+    ];
+    const total = rows.reduce((s, r) => s + r.packages, 0);
+    const workDays = rows.filter((r) => r.status === 'work').length;
+    const avg = workDays > 0 ? (total / workDays).toFixed(1) : '0';
+    lines.push([esc('Toplam'), '', '', String(total), ''].join(','));
+    lines.push([esc('Ortalama (iş günü)'), '', '', avg, ''].join(','));
+    return `\uFEFF${esc(`${monthLabel} ${year}`)}\n${lines.join('\n')}`;
+}
+
+function rowStatusClass(status: PackageDayEntry['status']): string {
+    if (status === 'leave') return 'bg-amber-500/15 text-amber-950 dark:text-amber-100';
+    if (status === 'empty') return 'bg-slate-500/10 text-muted-foreground';
+    return 'bg-emerald-500/5';
 }
 
 export default function PaketPrimPage() {
@@ -225,6 +314,59 @@ export default function PaketPrimPage() {
             ),
         [summary.totalPackages, summary.avgPackagesPerWorkDay, remainDays]
     );
+
+    const packageDayRows = useMemo(() => buildPackageDayRows(entries), [entries]);
+
+    const packageTableStats = useMemo(() => {
+        let total = 0;
+        let workDays = 0;
+        let hemen = 0;
+        let sanal = 0;
+        for (const e of entries) {
+            if (e.status !== 'work') continue;
+            workDays += 1;
+            total += e.packages;
+            if (e.tip === 'hemen') hemen += e.packages;
+            else if (e.tip === 'sanal') sanal += e.packages;
+        }
+        return {
+            total,
+            workDays,
+            avg: workDays > 0 ? total / workDays : 0,
+            hemen,
+            sanal
+        };
+    }, [entries]);
+
+    const copyPackageTable = useCallback(async () => {
+        const text = packageRowsToTsv(
+            packageDayRows,
+            MONTH_LABELS[monthIndex],
+            year
+        );
+        try {
+            await navigator.clipboard.writeText(text);
+            setStatus('Günlük paket tablosu panoya kopyalandı.');
+        } catch {
+            setError('Panoya kopyalanamadı.');
+        }
+    }, [packageDayRows, monthIndex, year]);
+
+    const downloadPackageCsv = useCallback(() => {
+        const csv = packageRowsToCsv(
+            packageDayRows,
+            MONTH_LABELS[monthIndex],
+            year
+        );
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `paket-prim-${year}-${String(monthIndex + 1).padStart(2, '0')}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('CSV indirildi.');
+    }, [packageDayRows, monthIndex, year]);
 
     const shiftMonth = useCallback(
         (delta: number) => {
@@ -1113,6 +1255,138 @@ export default function PaketPrimPage() {
                         )}
                     </div>
                 </div>
+            </section>
+
+            {/* Aylık toplam paket — gün gün */}
+            <section className="rounded-xl border border-border overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h2 className="text-sm font-semibold">Toplam atılan paket</h2>
+                        <p className="text-[11px] text-muted-foreground">
+                            {MONTH_LABELS[monthIndex]} {year} · {packageDayRows.length} gün · iş{' '}
+                            {packageTableStats.avg > 0
+                                ? `${packageTableStats.avg.toFixed(1)} ort.`
+                                : '—'}{' '}
+                            · Hemen {packageTableStats.hemen} · Sanal {packageTableStats.sanal}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void copyPackageTable()}
+                            disabled={loading || packageDayRows.length === 0}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
+                        >
+                            <Copy className="w-3.5 h-3.5" />
+                            Kopyala
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadPackageCsv}
+                            disabled={loading || packageDayRows.length === 0}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
+                        >
+                            <Download className="w-3.5 h-3.5" />
+                            CSV
+                        </button>
+                    </div>
+                </div>
+                {loading ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Yükleniyor…</span>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[560px] text-sm">
+                            <thead className="text-xs text-muted-foreground bg-background">
+                                <tr className="border-b border-border">
+                                    <th className="text-left font-medium px-3 py-2 whitespace-nowrap">
+                                        Gün
+                                    </th>
+                                    <th className="text-left font-medium px-3 py-2 whitespace-nowrap">
+                                        Durum
+                                    </th>
+                                    <th className="text-left font-medium px-3 py-2 whitespace-nowrap">
+                                        Tip
+                                    </th>
+                                    <th className="text-right font-medium px-3 py-2 whitespace-nowrap">
+                                        Paket
+                                    </th>
+                                    <th className="text-right font-medium px-3 py-2 whitespace-nowrap">
+                                        Kümülatif
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {packageDayRows.map((row) => (
+                                    <tr key={row.date} className={rowStatusClass(row.status)}>
+                                        <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
+                                            {row.label}
+                                        </td>
+                                        <td className="px-3 py-1.5 whitespace-nowrap">
+                                            {statusLabel(row.status)}
+                                        </td>
+                                        <td className="px-3 py-1.5 whitespace-nowrap">
+                                            {row.tip === 'hemen' ? (
+                                                <span className="text-sky-700 dark:text-sky-300">
+                                                    Hemen
+                                                </span>
+                                            ) : row.tip === 'sanal' ? (
+                                                <span className="text-violet-700 dark:text-violet-300">
+                                                    Sanal
+                                                </span>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                                            {row.status === 'work' ? row.packages : '—'}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                                            {row.cumulative}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr className="border-t border-border bg-secondary/30 font-medium">
+                                    <td className="px-3 py-2" colSpan={3}>
+                                        Toplam
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums">
+                                        {packageTableStats.total}
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                        {packageTableStats.total}
+                                    </td>
+                                </tr>
+                                <tr className="bg-secondary/20 text-sm">
+                                    <td className="px-3 py-2 text-muted-foreground" colSpan={3}>
+                                        Ortalama (iş günü)
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums font-medium">
+                                        {packageTableStats.avg > 0
+                                            ? packageTableStats.avg.toFixed(1)
+                                            : '—'}
+                                    </td>
+                                    <td className="px-3 py-2" />
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                )}
+                <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border flex flex-wrap gap-x-3 gap-y-1">
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" /> İş
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-amber-500/40" /> İzin
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-slate-500/30" /> Boş
+                    </span>
+                </p>
             </section>
 
             <section className="rounded-xl border border-border overflow-hidden">

@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    CalendarClock,
     ChevronLeft,
     ChevronRight,
     Copy,
@@ -180,6 +181,9 @@ export default function PaketPrimPage() {
     const [confirmModalOpen, setConfirmModalOpen] = useState(false);
     const [confirmStep, setConfirmStep] = useState<'ask' | 'edit'>('ask');
     const [editedGross, setEditedGross] = useState('');
+    const [flashToday, setFlashToday] = useState(false);
+    const pendingScrollToToday = useRef(false);
+    const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const monthNum = monthIndex + 1;
     const monthClosed = Boolean(closing?.is_closed);
@@ -386,6 +390,42 @@ export default function PaketPrimPage() {
         },
         [year]
     );
+
+    const scrollToTodayRow = useCallback(() => {
+        const id = `paket-day-${todayStr()}`;
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        setFlashToday(true);
+        flashTimerRef.current = setTimeout(() => setFlashToday(false), 1800);
+    }, []);
+
+    const goToToday = useCallback(() => {
+        const n = new Date();
+        const y = n.getFullYear();
+        const m = n.getMonth();
+        if (year !== y || monthIndex !== m) {
+            pendingScrollToToday.current = true;
+            setYear(y);
+            setMonthIndex(m);
+            return;
+        }
+        scrollToTodayRow();
+    }, [year, monthIndex, scrollToTodayRow]);
+
+    useEffect(() => {
+        if (loading || !pendingScrollToToday.current) return;
+        pendingScrollToToday.current = false;
+        const t = window.setTimeout(() => scrollToTodayRow(), 80);
+        return () => window.clearTimeout(t);
+    }, [loading, year, monthIndex, scrollToTodayRow]);
+
+    useEffect(() => {
+        return () => {
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        };
+    }, []);
 
     const persistEntry = useCallback(
         async (entry: PackageDayEntry) => {
@@ -750,6 +790,15 @@ export default function PaketPrimPage() {
                         </button>
                     </div>
                     <div className="flex flex-wrap gap-2 justify-end">
+                        <button
+                            type="button"
+                            onClick={goToToday}
+                            disabled={loading}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
+                        >
+                            <CalendarClock className="w-3.5 h-3.5" />
+                            Bugüne git
+                        </button>
                         {monthClosed ? (
                             <button
                                 type="button"
@@ -1390,11 +1439,22 @@ export default function PaketPrimPage() {
             </section>
 
             <section className="rounded-xl border border-border overflow-hidden">
-                <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center justify-between gap-2">
+                <div className="px-4 py-3 border-b border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-sm font-semibold">Günlük kayıt</h2>
-                    <span className="text-xs text-muted-foreground">
-                        Haftada 1 izin · varsayılan Pazartesi · Supabase
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={goToToday}
+                            disabled={loading}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-secondary/50 disabled:opacity-50"
+                        >
+                            <CalendarClock className="w-3.5 h-3.5" />
+                            Bugüne git
+                        </button>
+                        <span className="text-xs text-muted-foreground">
+                            Haftada 1 izin · varsayılan Pazartesi · Supabase
+                        </span>
+                    </div>
                 </div>
 
                 {loading ? (
@@ -1409,6 +1469,7 @@ export default function PaketPrimPage() {
                                 key={entry.date}
                                 entry={entry}
                                 isToday={entry.date === today}
+                                flash={flashToday && entry.date === today}
                                 leaveAllowed={entry.status !== 'leave'}
                                 saving={savingDate === entry.date}
                                 locked={monthClosed}
@@ -1624,6 +1685,7 @@ function TipToggle({
 function DayRow({
     entry,
     isToday,
+    flash,
     leaveAllowed,
     saving,
     locked,
@@ -1634,6 +1696,7 @@ function DayRow({
 }: {
     entry: PackageDayEntry;
     isToday: boolean;
+    flash: boolean;
     leaveAllowed: boolean;
     saving: boolean;
     locked: boolean;
@@ -1659,8 +1722,13 @@ function DayRow({
 
     return (
         <div
-            className={`px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:gap-4 ${
-                isToday ? 'bg-primary/5' : ''
+            id={`paket-day-${entry.date}`}
+            className={`px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:gap-4 scroll-mt-20 transition-colors duration-500 ${
+                flash
+                    ? 'bg-primary/25 ring-2 ring-primary/40 ring-inset'
+                    : isToday
+                      ? 'bg-primary/5'
+                      : ''
             } ${isLeave || locked ? 'opacity-70' : ''}`}
         >
             <div className="md:w-44 shrink-0">

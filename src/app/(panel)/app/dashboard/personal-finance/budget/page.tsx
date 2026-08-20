@@ -20,12 +20,14 @@ import {
     fmtMoney,
     incomeNetCash,
     lineRemaining,
+    logPfActivity,
     mapBudgetLine,
     mapBudgetMonth,
     mapDebt,
     mapExpense,
     mapIncome,
     mapSavingsPot,
+    monthLabel,
     parseMoney,
     plannedAmount,
     type BudgetLineRow,
@@ -181,6 +183,9 @@ export default function PersonalBudgetPage() {
         note: string;
         is_closed: boolean;
     }>) => {
+        const beforeClosed = monthMeta?.is_closed ?? false;
+        const beforeMode = monthMeta?.base_mode ?? 'net_income';
+        const beforeManual = monthMeta?.manual_base ?? 0;
         const payload = {
             year,
             month,
@@ -197,6 +202,45 @@ export default function PersonalBudgetPage() {
             .single();
         if (uErr) throw new Error(uErr.message);
         setMonthMeta(mapBudgetMonth(data as Record<string, unknown>));
+
+        if (patch?.is_closed !== undefined && patch.is_closed !== beforeClosed) {
+            void logPfActivity({
+                year,
+                month,
+                action: 'budget_close',
+                summary: patch.is_closed
+                    ? `Bütçe ${monthLabel(month)} kapatıldı`
+                    : `Bütçe ${monthLabel(month)} açıldı`,
+                from_kind: 'budget',
+                from_label: `${monthLabel(month)} ${year}`,
+                meta: { is_closed: patch.is_closed }
+            });
+        } else if (
+            (patch?.base_mode !== undefined && patch.base_mode !== beforeMode) ||
+            (patch?.manual_base !== undefined &&
+                Math.abs(patch.manual_base - beforeManual) > 0.005)
+        ) {
+            void logPfActivity({
+                year,
+                month,
+                action: 'budget_param',
+                summary:
+                    patch?.base_mode !== undefined && patch.base_mode !== beforeMode
+                        ? `Bütçe taban · ${beforeMode === 'manual' ? 'Manuel' : 'Net gelir'} → ${
+                              payload.base_mode === 'manual' ? 'Manuel' : 'Net gelir'
+                          }`
+                        : `Bütçe manuel taban · ${fmtMoney(beforeManual)} → ${fmtMoney(payload.manual_base)}`,
+                amount: payload.manual_base,
+                from_kind: 'budget',
+                from_label: `${monthLabel(month)} ${year}`,
+                meta: {
+                    before_mode: beforeMode,
+                    after_mode: payload.base_mode,
+                    before_manual: beforeManual,
+                    after_manual: payload.manual_base
+                }
+            });
+        }
     };
 
     const applyTemplate = async (templateId: string) => {
@@ -269,14 +313,54 @@ export default function PersonalBudgetPage() {
     };
 
     const updateLine = async (id: string, patch: Record<string, unknown>) => {
+        const prev = lines.find((r) => r.id === id);
         const { error: uErr } = await supabase.from(PF_BUDGET_LINES).update(patch).eq('id', id);
         if (uErr) {
             setError(uErr.message);
             return;
         }
-        setLines((prev) =>
-            prev.map((r) => (r.id === id ? mapBudgetLine({ ...r, ...patch }) : r))
+        setLines((prevLines) =>
+            prevLines.map((r) => (r.id === id ? mapBudgetLine({ ...r, ...patch }) : r))
         );
+
+        if (!prev) return;
+        if (patch.percent !== undefined) {
+            const nextPct = parseMoney(patch.percent as string | number);
+            if (Math.abs(nextPct - prev.percent) > 0.005) {
+                void logPfActivity({
+                    year,
+                    month,
+                    action: 'budget_param',
+                    summary: `Bütçe “${prev.name}” · %${prev.percent} → %${nextPct}`,
+                    from_kind: 'budget_line',
+                    from_id: prev.id,
+                    from_label: prev.name,
+                    meta: { before_percent: prev.percent, after_percent: nextPct }
+                });
+            }
+        }
+        const linkKeys = [
+            'linked_savings_id',
+            'linked_expense_id',
+            'linked_debt_id',
+            'line_type'
+        ] as const;
+        for (const key of linkKeys) {
+            if (patch[key] === undefined) continue;
+            const before = String((prev as Record<string, unknown>)[key] ?? '');
+            const after = String(patch[key] ?? '');
+            if (before === after) continue;
+            void logPfActivity({
+                year,
+                month,
+                action: 'budget_param',
+                summary: `Bütçe “${prev.name}” · ${key} değişti`,
+                from_kind: 'budget_line',
+                from_id: prev.id,
+                from_label: prev.name,
+                meta: { field: key, before, after }
+            });
+        }
     };
 
     const removeLine = async (id: string) => {
@@ -305,6 +389,16 @@ export default function PersonalBudgetPage() {
         setBusy(true);
         setError(null);
         setStatus(null);
+
+        let resolvedTo: {
+            kind: 'savings' | 'expense' | 'debt' | 'budget_line';
+            id: string | null;
+            label: string;
+        } = {
+            kind: 'budget_line',
+            id: line.id,
+            label: `${budgetLineTypeLabel(line.line_type)} · ${line.name}`
+        };
 
         try {
             if (line.line_type === 'savings') {
@@ -345,6 +439,11 @@ export default function PersonalBudgetPage() {
                     }
                 ]);
                 if (ledErr) throw new Error(ledErr.message);
+                resolvedTo = {
+                    kind: 'savings',
+                    id: potId,
+                    label: pot?.name || 'Birikim kasası'
+                };
             }
 
             if (line.line_type === 'expense' && line.linked_expense_id) {
@@ -359,6 +458,11 @@ export default function PersonalBudgetPage() {
                         })
                         .eq('id', exp.id);
                     if (eErr) throw new Error(eErr.message);
+                    resolvedTo = {
+                        kind: 'expense',
+                        id: exp.id,
+                        label: exp.name
+                    };
                 }
             }
 
@@ -374,6 +478,11 @@ export default function PersonalBudgetPage() {
                         })
                         .eq('id', debt.id);
                     if (dErr) throw new Error(dErr.message);
+                    resolvedTo = {
+                        kind: 'debt',
+                        id: debt.id,
+                        label: debt.name
+                    };
                 }
             }
 
@@ -382,6 +491,25 @@ export default function PersonalBudgetPage() {
                 .update({ sent_amount: line.sent_amount + sendAmt })
                 .eq('id', line.id);
             if (sErr) throw new Error(sErr.message);
+
+            void logPfActivity({
+                year,
+                month,
+                action: 'budget_send',
+                summary: `Bütçe “${line.name}” → ${resolvedTo.label} · ${fmtMoney(sendAmt)}`,
+                amount: sendAmt,
+                from_kind: 'budget_line',
+                from_id: line.id,
+                from_label: line.name,
+                to_kind: resolvedTo.kind,
+                to_id: resolvedTo.id,
+                to_label: resolvedTo.label,
+                meta: {
+                    line_type: line.line_type,
+                    percent: line.percent,
+                    mode
+                }
+            });
 
             setStatus(`${line.name}: ${fmtMoney(sendAmt)} gönderildi`);
             await load(year, month);

@@ -29,7 +29,12 @@ const TABLES = [
     'ai_budget_settings',
     'personal_finance_incomes',
     'personal_finance_expenses',
-    'personal_finance_debts'
+    'personal_finance_debts',
+    'personal_finance_budget_lines',
+    'personal_finance_budget_months',
+    'personal_finance_savings_ledger',
+    'personal_finance_savings_pots',
+    'personal_finance_activity_log'
 ] as const;
 
 export async function POST(request: Request) {

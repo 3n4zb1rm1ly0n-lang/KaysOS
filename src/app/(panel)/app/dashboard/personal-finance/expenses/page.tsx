@@ -12,6 +12,7 @@ import {
     expenseRemaining,
     fmtMoney,
     incomeNetCash,
+    logPfActivity,
     mapExpense,
     parseMoney,
     type PersonalExpenseRow
@@ -203,6 +204,7 @@ export default function PersonalExpensesPage() {
         let paidClamped = Math.max(0, paid);
         if (paidClamped > amount) paidClamped = amount;
         const fully = expenseIsFullyPaid(amount, paidClamped);
+        const prevPaid = row.paid_amount;
         setExpenses((prev) =>
             prev.map((r) =>
                 r.id === row.id
@@ -220,6 +222,26 @@ export default function PersonalExpensesPage() {
             paid_amount: paidClamped,
             is_paid: fully
         });
+        if (Math.abs(paidClamped - prevPaid) > 0.005 || Math.abs(amount - row.amount) > 0.005) {
+            void logPfActivity({
+                year,
+                month,
+                action: 'expense_pay',
+                summary: `${row.name} · ödenen ${fmtMoney(prevPaid)} → ${fmtMoney(paidClamped)}`,
+                amount: paidClamped - prevPaid,
+                from_kind: 'expense',
+                from_id: row.id,
+                from_label: row.name,
+                to_kind: 'expense',
+                to_id: row.id,
+                to_label: row.name,
+                meta: {
+                    before_paid: prevPaid,
+                    after_paid: paidClamped,
+                    total: amount
+                }
+            });
+        }
     };
 
     const removeRow = async (id: string) => {

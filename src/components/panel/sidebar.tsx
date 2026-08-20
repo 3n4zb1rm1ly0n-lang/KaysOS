@@ -29,7 +29,8 @@ import {
     Coins,
     Bot,
     PieChart,
-    PiggyBank
+    PiggyBank,
+    History
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { KaysiaLogo } from '@/components/brand/kaysia-logo';
@@ -73,6 +74,12 @@ export const PERSONAL_FINANCE_NAV_ITEMS: NavLinkItem[] = [
         label: 'Borçlar',
         href: '/app/dashboard/personal-finance/debts',
         icon: Scale
+    },
+    {
+        id: 'pf-activity',
+        label: 'Hareketler',
+        href: '/app/dashboard/personal-finance/activity',
+        icon: History
     }
 ];
 

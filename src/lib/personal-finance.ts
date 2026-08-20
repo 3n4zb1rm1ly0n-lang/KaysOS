@@ -14,7 +14,120 @@ export const PF_BUDGET_LINES = 'personal_finance_budget_lines';
 export const PF_BUDGET_MONTHS = 'personal_finance_budget_months';
 export const PF_SAVINGS_POTS = 'personal_finance_savings_pots';
 export const PF_SAVINGS_LEDGER = 'personal_finance_savings_ledger';
+export const PF_ACTIVITY_LOG = 'personal_finance_activity_log';
 export const COMPANY_SOURCE = 'company_cash';
+
+export const PF_ACTIVITY_ACTIONS = [
+    { value: 'company_bind', label: 'Şirket bağla' },
+    { value: 'company_refresh', label: 'Şirket yenile' },
+    { value: 'withhold_change', label: 'Bloke / haciz' },
+    { value: 'budget_send', label: 'Bütçe gönderim' },
+    { value: 'budget_param', label: 'Bütçe parametre' },
+    { value: 'budget_close', label: 'Bütçe ay kapat/aç' },
+    { value: 'savings_manual', label: 'Birikim manuel' },
+    { value: 'expense_pay', label: 'Gider ödeme' },
+    { value: 'debt_pay', label: 'Borç ödeme' }
+] as const;
+
+export type PfActivityAction = (typeof PF_ACTIVITY_ACTIONS)[number]['value'];
+
+export type PfEntityKind =
+    | 'company'
+    | 'income'
+    | 'budget'
+    | 'budget_line'
+    | 'savings'
+    | 'expense'
+    | 'debt'
+    | 'manual'
+    | '';
+
+export type PfActivityInput = {
+    year: number;
+    month: number;
+    action: PfActivityAction;
+    summary: string;
+    amount?: number;
+    from_kind?: PfEntityKind;
+    from_id?: string | null;
+    from_label?: string;
+    to_kind?: PfEntityKind;
+    to_id?: string | null;
+    to_label?: string;
+    meta?: Record<string, unknown>;
+};
+
+export type PfActivityRow = {
+    id: string;
+    created_at: string;
+    year: number;
+    month: number;
+    action: PfActivityAction | string;
+    summary: string;
+    amount: number;
+    from_kind: string;
+    from_id: string | null;
+    from_label: string;
+    to_kind: string;
+    to_id: string | null;
+    to_label: string;
+    meta: Record<string, unknown>;
+};
+
+export function pfActivityActionLabel(action: string): string {
+    return PF_ACTIVITY_ACTIONS.find((a) => a.value === action)?.label ?? action;
+}
+
+export function mapPfActivity(r: Record<string, unknown>): PfActivityRow {
+    const metaRaw = r.meta;
+    let meta: Record<string, unknown> = {};
+    if (metaRaw && typeof metaRaw === 'object' && !Array.isArray(metaRaw)) {
+        meta = metaRaw as Record<string, unknown>;
+    }
+    return {
+        id: String(r.id),
+        created_at: String(r.created_at ?? ''),
+        year: Number(r.year) || 0,
+        month: Number(r.month) || 0,
+        action: String(r.action ?? ''),
+        summary: String(r.summary ?? ''),
+        amount: parseMoney(r.amount as string | number),
+        from_kind: String(r.from_kind ?? ''),
+        from_id: r.from_id ? String(r.from_id) : null,
+        from_label: String(r.from_label ?? ''),
+        to_kind: String(r.to_kind ?? ''),
+        to_id: r.to_id ? String(r.to_id) : null,
+        to_label: String(r.to_label ?? ''),
+        meta
+    };
+}
+
+/** Fire-and-forget; ana işlemi bozmaz */
+export async function logPfActivity(input: PfActivityInput): Promise<void> {
+    try {
+        const { error } = await supabase.from(PF_ACTIVITY_LOG).insert([
+            {
+                year: input.year,
+                month: input.month,
+                action: input.action,
+                summary: input.summary.trim() || input.action,
+                amount: parseMoney(input.amount),
+                from_kind: input.from_kind ?? '',
+                from_id: input.from_id || null,
+                from_label: input.from_label ?? '',
+                to_kind: input.to_kind ?? '',
+                to_id: input.to_id || null,
+                to_label: input.to_label ?? '',
+                meta: input.meta ?? {}
+            }
+        ]);
+        if (error) {
+            console.error('[pf activity log]', error.message);
+        }
+    } catch (e) {
+        console.error('[pf activity log]', e);
+    }
+}
 
 export const DEBT_TYPES = [
     { value: 'credit_card', label: 'Kredi kartı' },

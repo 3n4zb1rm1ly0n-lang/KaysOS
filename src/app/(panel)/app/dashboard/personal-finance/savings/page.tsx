@@ -9,6 +9,7 @@ import {
     PF_SAVINGS_LEDGER,
     PF_SAVINGS_POTS,
     fmtMoney,
+    logPfActivity,
     mapSavingsLedger,
     mapSavingsPot,
     parseMoney,
@@ -185,6 +186,24 @@ export default function PersonalSavingsPage() {
             setManualAmount('');
             setManualNote('');
             setStatus(sign > 0 ? 'Giriş kaydedildi' : 'Çıkış kaydedildi');
+            const now = new Date();
+            void logPfActivity({
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                action: 'savings_manual',
+                summary: `Manuel → ${pot.name} · ${sign > 0 ? '+' : '−'}${fmtMoney(amt)}`,
+                amount: delta,
+                from_kind: 'manual',
+                from_label: sign > 0 ? 'Manuel giriş' : 'Manuel çıkış',
+                to_kind: 'savings',
+                to_id: pot.id,
+                to_label: pot.name,
+                meta: {
+                    note: manualNote.trim() || null,
+                    before_balance: pot.balance,
+                    after_balance: pot.balance + delta
+                }
+            });
         }
         setBusy(false);
         await load();

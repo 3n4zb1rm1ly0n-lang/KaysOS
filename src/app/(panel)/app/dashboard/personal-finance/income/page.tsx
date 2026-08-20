@@ -13,9 +13,11 @@ import {
     fetchCompanyCashNet,
     fmtMoney,
     incomeNetCash,
+    logPfActivity,
     mapIncome,
     monthLabel,
     parseMoney,
+    withheldKindLabel,
     type PersonalIncomeRow
 } from '@/lib/personal-finance';
 
@@ -150,6 +152,18 @@ export default function PersonalIncomePage() {
         }
 
         setStatus(`Şirket nakiti bağlandı: ${fmtMoney(cash.amount)}`);
+        void logPfActivity({
+            year,
+            month,
+            action: 'company_bind',
+            summary: `Şirket → Gelir · ${fmtMoney(cash.amount)}`,
+            amount: cash.amount,
+            from_kind: 'company',
+            from_label: 'Şirket nakit',
+            to_kind: 'income',
+            to_label: `Şirket nakit · ${monthLabel(month)} ${year}`,
+            meta: { entry_id: cash.entryId }
+        });
         setBusy(false);
         await load(year, month);
     };
@@ -172,7 +186,22 @@ export default function PersonalIncomePage() {
             })
             .eq('id', row.id);
         if (uErr) setError(uErr.message);
-        else setStatus(`Şirket tutarı güncellendi: ${fmtMoney(cash.amount)}`);
+        else {
+            setStatus(`Şirket tutarı güncellendi: ${fmtMoney(cash.amount)}`);
+            void logPfActivity({
+                year,
+                month,
+                action: 'company_refresh',
+                summary: `Şirket yenile · ${fmtMoney(row.amount)} → ${fmtMoney(cash.amount)}`,
+                amount: cash.amount,
+                from_kind: 'company',
+                from_label: 'Şirket nakit',
+                to_kind: 'income',
+                to_id: row.id,
+                to_label: row.name,
+                meta: { before: row.amount, after: cash.amount, entry_id: cash.entryId }
+            });
+        }
         setBusy(false);
         await load(year, month);
     };
@@ -228,6 +257,7 @@ export default function PersonalIncomePage() {
             withheld_note: string;
         }>
     ) => {
+        const prev = incomes.find((r) => r.id === id);
         const { error: uErr } = await supabase.from(PF_INCOMES).update(patch).eq('id', id);
         if (uErr) {
             setError(
@@ -237,8 +267,8 @@ export default function PersonalIncomePage() {
             );
             return;
         }
-        setIncomes((prev) =>
-            prev.map((r) =>
+        setIncomes((prevRows) =>
+            prevRows.map((r) =>
                 r.id === id
                     ? {
                           ...r,
@@ -249,6 +279,48 @@ export default function PersonalIncomePage() {
                     : r
             )
         );
+
+        if (
+            prev &&
+            (patch.withheld_amount !== undefined ||
+                patch.withheld_kind !== undefined ||
+                patch.withheld_note !== undefined)
+        ) {
+            const afterAmt =
+                patch.withheld_amount !== undefined
+                    ? patch.withheld_amount
+                    : prev.withheld_amount;
+            const afterKind =
+                patch.withheld_kind !== undefined ? patch.withheld_kind : prev.withheld_kind;
+            const amtChanged =
+                patch.withheld_amount !== undefined &&
+                Math.abs(patch.withheld_amount - prev.withheld_amount) > 0.005;
+            const kindChanged =
+                patch.withheld_kind !== undefined && patch.withheld_kind !== prev.withheld_kind;
+            if (amtChanged || kindChanged) {
+                void logPfActivity({
+                    year,
+                    month,
+                    action: 'withhold_change',
+                    summary: amtChanged
+                        ? `${prev.name} · bloke ${fmtMoney(prev.withheld_amount)} → ${fmtMoney(afterAmt)}`
+                        : `${prev.name} · kesinti ${withheldKindLabel(String(prev.withheld_kind))} → ${withheldKindLabel(String(afterKind))}`,
+                    amount: afterAmt,
+                    from_kind: 'income',
+                    from_id: prev.id,
+                    from_label: prev.name,
+                    to_kind: 'income',
+                    to_id: prev.id,
+                    to_label: prev.name,
+                    meta: {
+                        before_amount: prev.withheld_amount,
+                        after_amount: afterAmt,
+                        before_kind: prev.withheld_kind,
+                        after_kind: afterKind
+                    }
+                });
+            }
+        }
     };
 
     const removeRow = async (id: string) => {

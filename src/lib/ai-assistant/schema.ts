@@ -556,6 +556,29 @@ export const AI_SCHEMA: TableSchema[] = [
         ]
     },
     {
+        name: 'personal_finance_activity_log',
+        label: 'Kişisel finans hareket log',
+        page: '/app/dashboard/personal-finance/activity',
+        hint: 'Nereden nereye, parametre değişiklikleri',
+        aliases: ['hareketler', 'activity log', 'finans log'],
+        columns: [
+            { name: 'id' },
+            { name: 'created_at' },
+            { name: 'year' },
+            { name: 'month' },
+            { name: 'action' },
+            { name: 'summary' },
+            { name: 'amount' },
+            { name: 'from_kind' },
+            { name: 'from_id' },
+            { name: 'from_label' },
+            { name: 'to_kind' },
+            { name: 'to_id' },
+            { name: 'to_label' },
+            { name: 'meta', type: 'jsonb' }
+        ]
+    },
+    {
         name: 'ai_usage_logs',
         label: 'AI kullanım',
         page: '/app/dashboard/ai-usage',
